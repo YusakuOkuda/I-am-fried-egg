@@ -4,7 +4,7 @@
   A / ←  : 左へ移動
   D / →  : 右へ移動
   Space  : ジャンプ
-  F3     : デバッグ表示の切替
+  F3     : デバッグ表示の切替(起動時はOFF)
   R      : ステージを最初からやり直す(開発用。チェックポイントも解除)
   K      : 耐久度を0にする(開発用。ゲームオーバーの確認)
   G      : 卵を落下限界の下へ移す(開発用。落下ゲームオーバーの確認)
@@ -27,6 +27,8 @@ STATE_GAME_OVER = "GAME_OVER"
 
 GAME_OVER_ITEMS = ["チェックポイントから再開", "タイトルへ戻る"]
 CONFIRM_ITEMS = ["はい", "いいえ"]
+# 画面左下に常時表示する操作ガイド(Esc は段階8でポーズに変更する。それまでは終了)
+CONTROLS_GUIDE = "A / ←:左移動   D / →:右移動   Space:ジャンプ   Esc:終了(仮)"
 
 
 def respawn(egg, stage, camera, from_checkpoint):
@@ -73,7 +75,7 @@ def main():
     game_over_message = ""
     menu_index = 0
     confirming = False        # 「タイトルへ戻りますか?」の確認画面を出しているか
-    show_debug = True
+    show_debug = False        # デバッグ表示は通常OFF。F3で切り替える
     jump_requested = False
     accumulator = 0.0
     running = True
@@ -184,10 +186,8 @@ def main():
         stage.draw(screen, camera)
         egg.draw(screen, camera)
         stage.draw_popups(screen, camera, fonts["ui"])
-        screen.blit(
-            fonts["debug"].render(
-                "A/D or Arrows: move   Space: jump   F3: debug   R: reset   Esc: quit",
-                True, config.COLOR_TEXT), (16, 12))
+        ui.draw_stage_label(screen, fonts["ui"], stage.number)
+        ui.draw_controls_guide(screen, fonts["ui"], CONTROLS_GUIDE)
         ui.draw_durability_gauge(screen, fonts["ui"], egg.durability.hp, egg.durability.max_hp)
         ui.draw_toast_count(screen, fonts["ui"], stage.toast_count, stage.toast_total)
 

@@ -89,9 +89,10 @@ class Egg:
         ratio = 1.0 if self.grounded else config.AIR_CONTROL_RATIO
         if move_dir != 0:
             # 横方向の力(最高速度に達していたら加えない)
+            # 力は重心に加える。重心以外に加えると、意図しない回転が混ざってしまうため
             if body.velocity.x * move_dir < config.MAX_MOVE_SPEED:
                 force = config.EGG_MASS * config.MOVE_ACCEL * ratio * move_dir
-                body.apply_force_at_world_point((force, 0), body.position)
+                body.apply_force_at_world_point((force, 0), body.local_to_world(body.center_of_gravity))
             # 転がすトルク(Y下向き座標では、正の角度が右回り=右へ転がる向き)
             if body.angular_velocity * move_dir < config.MAX_ANGULAR_SPEED:
                 body.torque = body.moment * config.MOVE_TORQUE_ACCEL * ratio * move_dir
