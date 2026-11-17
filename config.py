@@ -17,6 +17,7 @@ COLOR_PLATFORM = (196, 214, 190)
 COLOR_PLATFORM_EDGE = (120, 140, 115)
 COLOR_EGG = (255, 255, 255)
 COLOR_EGG_EDGE = (90, 90, 100)
+COLOR_EGG_DAMAGE = (255, 90, 90)    # ダメージ点滅時の卵の色
 COLOR_TEXT = (60, 60, 70)
 COLOR_DEBUG = (200, 40, 40)
 
@@ -27,7 +28,11 @@ GRID_SIZE = 160                     # 背景の格子の間隔(px)
 PHYSICS_DT = 1 / 60          # 物理の1ステップの長さ(秒)。固定
 MAX_STEPS_PER_FRAME = 5      # 1フレームで進める最大ステップ数(処理落ち対策)
 GRAVITY = 1800.0             # 重力加速度 (px/秒^2)。下向きが正
-MAX_SPEED = 1500.0           # 卵の最高速さ (px/秒)。足場のすり抜け防止
+MAX_SPEED = 1000.0           # 卵の最高速さ (px/秒)。1ステップで約17px進む。薄い足場(20px)のすり抜け防止
+
+# ---------- 衝突の種類(Pymunkの collision_type) ----------
+COLLISION_EGG = 1
+COLLISION_PLATFORM = 2
 
 # ---------- 卵の形 ----------
 EGG_WIDTH = 46
@@ -58,6 +63,39 @@ JUMP_SPEED = 620.0           # ジャンプ直後の上向き速度 (px/秒)
 COYOTE_TIME = 0.1            # 接地猶予時間(秒)
 JUMP_LOCKOUT = 0.15          # ジャンプ直後に再ジャンプ・再接地を無視する時間(秒)
 GROUND_NORMAL_MIN_Y = 0.5    # 接地とみなす面の傾き。0.5=約60度まで床扱い
+
+# ---------- 耐久度・ダメージ ----------
+DURABILITY_MAX = 100                 # 最大耐久度
+DURABILITY_START = 100               # 開始時の耐久度
+
+# 着地ダメージ: 着地の瞬間の「面に向かう速さ」(px/秒)で決まる。落下距離は使わない
+LANDING_DAMAGE_THRESHOLD = 700.0     # この速さ以下ならダメージなし(ジャンプの着地は約620)
+LANDING_DAMAGE_PER_SPEED = 0.12      # 閾値を超えた分の速さ1(px/秒)あたりのダメージ
+
+# 通常の衝突ダメージ: 壁・天井など「床ではない面」にぶつかった速さで決まる
+COLLISION_DAMAGE_THRESHOLD = 520.0   # この速さ以下ならダメージなし(最高移動速度は380)
+COLLISION_DAMAGE_PER_SPEED = 0.12
+
+IMPACT_INVINCIBLE_TIME = 0.3         # 衝撃ダメージを受けた直後の無敵時間(秒)
+DAMAGE_FLASH_TIME = 0.6              # ダメージ後に赤く点滅する時間(秒)
+DAMAGE_FLASH_INTERVAL = 0.08         # 点滅の切り替え間隔(秒)
+
+# ---------- UI ----------
+UI_MARGIN = 16
+GAUGE_WIDTH = 220
+GAUGE_HEIGHT = 22
+COLOR_GAUGE_BG = (200, 205, 215)
+COLOR_GAUGE_EDGE = (90, 90, 100)
+COLOR_GAUGE_HIGH = (110, 200, 120)   # 耐久度50%超
+COLOR_GAUGE_MID = (240, 200, 80)     # 25~50%
+COLOR_GAUGE_LOW = (230, 80, 80)      # 25%未満
+COLOR_MENU_OVERLAY = (20, 20, 30, 150)
+COLOR_MENU_TITLE = (255, 255, 255)
+COLOR_MENU_MESSAGE = (235, 235, 245)
+COLOR_MENU_ITEM_BG = (90, 95, 115)
+COLOR_MENU_ITEM_TEXT = (230, 230, 240)
+COLOR_MENU_SELECTED_BG = (255, 255, 255)
+COLOR_MENU_SELECTED_TEXT = (40, 40, 60)
 
 # ---------- カメラ ----------
 CAMERA_ANCHOR_Y = 420.0              # 卵を画面の上から何pxの高さに置くか(中央は360)

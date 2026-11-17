@@ -1,4 +1,4 @@
-"""卵の形状・物理ボディ・操作・描画を担当するファイル。
+"""卵の形状・物理ボディ・操作・耐久度・描画を担当するファイル。
 
 卵の形は凸多角形で表し、描画と当たり判定に同じ頂点を使う。
 回転は物理演算の結果(body.angle)をそのまま描画に使う。
@@ -10,6 +10,7 @@ import pygame
 import pymunk
 
 import config
+import damage
 
 
 def make_egg_vertices(width, height, points, taper):
@@ -44,6 +45,7 @@ class Egg:
         self.shape = pymunk.Poly(self.body, self.local_vertices)
         self.shape.friction = config.EGG_FRICTION
         self.shape.elasticity = config.EGG_ELASTICITY
+        self.shape.collision_type = config.COLLISION_EGG
         space.add(self.body, self.shape)
 
         # 接地関連の状態
@@ -52,8 +54,13 @@ class Egg:
         self.jump_lockout = 0.0
         self.ground_normal = (0.0, 0.0)
 
-    # ---------- 状態リセット(開発用。段階6の再開処理でも使う) ----------
-    def reset(self, x, y):
+        # 耐久度と、物理ステップ中に集めた衝撃(ステップ後にまとめて処理する)
+        self.durability = damage.Durability()
+        self.pending_impacts = []
+
+    # ---------- 状態リセット(開発用・ゲームオーバーからの再開用) ----------
+    def reset(self, x, y, hp=None):
+        """位置・速度・耐久度を戻す。hp を省略すると耐久度は開始時の値(チェックポイント再開では保存値を渡す)。"""
         self.body.position = (x, y)
         self.body.angle = 0.0
         self.body.velocity = (0, 0)
@@ -61,6 +68,8 @@ class Egg:
         self.grounded = False
         self.time_since_grounded = 999.0
         self.jump_lockout = 0.0
+        self.durability.reset(hp)
+        self.pending_impacts.clear()
 
     # ---------- 1ステップ前の操作処理 ----------
     def apply_controls(self, move_dir, jump_pressed, dt):
@@ -115,6 +124,26 @@ class Egg:
             self.grounded = True
             self.ground_normal = (normal.x, normal.y)
 
+    # ---------- 1ステップ後のダメージ処理 ----------
+    def add_impact(self, kind, speed):
+        """衝突コールバックから呼ばれる。ここでは記録だけして、処理は update_damage で行う。"""
+        self.pending_impacts.append((kind, speed))
+
+    def update_damage(self, dt):
+        """タイマーを進め、このステップで集めた衝撃からダメージを1回だけ与える。
+
+        同じステップに着地と壁衝突が同時に起きても、いちばん大きい1つだけを採用する(二重計算の防止)。
+        """
+        self.durability.update(dt)
+        if not self.pending_impacts:
+            return
+        impacts = self.pending_impacts
+        self.pending_impacts = []
+
+        kind, speed = max(impacts, key=lambda item: damage.impact_damage(item[0], item[1]))
+        amount = damage.impact_damage(kind, speed)
+        self.durability.take_damage(kind, speed, amount, config.IMPACT_INVINCIBLE_TIME)
+
     # ---------- 描画 ----------
     def world_vertices(self):
         """ワールド座標(ステージ上の座標)での頂点リスト。"""
@@ -126,5 +155,6 @@ class Egg:
 
     def draw(self, surface, camera):
         points = self.screen_vertices(camera)
-        pygame.draw.polygon(surface, config.COLOR_EGG, points)
+        color = config.COLOR_EGG_DAMAGE if self.durability.flash_on else config.COLOR_EGG
+        pygame.draw.polygon(surface, color, points)
         pygame.draw.polygon(surface, config.COLOR_EGG_EDGE, points, 2)
