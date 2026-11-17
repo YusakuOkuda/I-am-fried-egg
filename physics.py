@@ -32,6 +32,30 @@ def add_platforms(space, platforms):
     return shapes
 
 
+def add_sensor(space, vertices, collision_type):
+    """触れても押し返さない当たり判定(センサー)を追加し、形状を返す。トースト・チェックポイント用。"""
+    shape = pymunk.Poly(space.static_body, vertices)
+    shape.sensor = True
+    shape.collision_type = collision_type
+    space.add(shape)
+    return shape
+
+
+def register_item_collisions(space, on_toast, on_checkpoint):
+    """卵がトースト・チェックポイントに触れた瞬間に、触れた形状を on_toast(shape) / on_checkpoint(shape) で通知する。
+
+    ここでは通知だけ。取得や保存の処理は物理ステップの後でまとめて行う。
+    """
+    def toast_begin(arbiter, _space, _data):
+        on_toast(arbiter.shapes[1])        # 登録した順(卵, トースト)
+
+    def checkpoint_begin(arbiter, _space, _data):
+        on_checkpoint(arbiter.shapes[1])
+
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_TOAST, begin=toast_begin)
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_CHECKPOINT, begin=checkpoint_begin)
+
+
 def register_egg_collisions(space, on_impact):
     """卵と足場が「触れ始めた瞬間」に on_impact(kind, speed) を呼ぶように登録する。
 

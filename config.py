@@ -20,6 +20,13 @@ COLOR_EGG_EDGE = (90, 90, 100)
 COLOR_EGG_DAMAGE = (255, 90, 90)    # ダメージ点滅時の卵の色
 COLOR_TEXT = (60, 60, 70)
 COLOR_DEBUG = (200, 40, 40)
+COLOR_TOAST = (232, 190, 120)
+COLOR_TOAST_INNER = (248, 224, 170)
+COLOR_TOAST_EDGE = (170, 120, 60)
+COLOR_CHECKPOINT_POLE = (130, 130, 145)
+COLOR_FLAG_INACTIVE = (185, 185, 195)   # 未通過の旗
+COLOR_FLAG_ACTIVE = (90, 200, 120)      # 通過済みの旗
+COLOR_POPUP = (210, 110, 20)            # 取得表示の文字色
 
 # ---------- 背景 ----------
 GRID_SIZE = 160                     # 背景の格子の間隔(px)
@@ -33,6 +40,8 @@ MAX_SPEED = 1000.0           # 卵の最高速さ (px/秒)。1ステップで約
 # ---------- 衝突の種類(Pymunkの collision_type) ----------
 COLLISION_EGG = 1
 COLLISION_PLATFORM = 2
+COLLISION_TOAST = 3
+COLLISION_CHECKPOINT = 4
 
 # ---------- 卵の形 ----------
 EGG_WIDTH = 46
@@ -79,6 +88,18 @@ COLLISION_DAMAGE_PER_SPEED = 0.12
 IMPACT_INVINCIBLE_TIME = 0.3         # 衝撃ダメージを受けた直後の無敵時間(秒)
 DAMAGE_FLASH_TIME = 0.6              # ダメージ後に赤く点滅する時間(秒)
 DAMAGE_FLASH_INTERVAL = 0.08         # 点滅の切り替え間隔(秒)
+
+# ---------- トースト ----------
+TOAST_HEAL = 10                      # 取得時の耐久度の回復量
+TOAST_SIZE = 34                      # 見た目と判定の大きさ(px)
+TOAST_POPUP_TIME = 1.0               # 取得表示を出す時間(秒)
+TOAST_POPUP_RISE = 50                # 取得表示が上へ昇る距離(px)
+
+# ---------- チェックポイント ----------
+CHECKPOINT_POLE_HEIGHT = 120         # ポールの高さ(px)。判定の高さでもある
+CHECKPOINT_WIDTH = 28                # 判定の幅(px)
+CHECKPOINT_FLAG_WIDTH = 46           # 旗の横の長さ(px)
+CHECKPOINT_FLAG_HEIGHT = 30          # 旗の縦の長さ(px)
 
 # ---------- UI ----------
 UI_MARGIN = 16

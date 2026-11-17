@@ -63,6 +63,14 @@ def draw_durability_gauge(surface, font, hp, max_hp):
     surface.blit(number, (number_x, y + (h - number.get_height()) // 2))
 
 
+def draw_toast_count(surface, font, count, total):
+    """ゲージの下(右上)に「トースト 取得数/総数」を描く。"""
+    text = font.render(f"トースト {count}/{total}", True, config.COLOR_TEXT)
+    x = config.WINDOW_WIDTH - config.UI_MARGIN - text.get_width()
+    y = config.UI_MARGIN + config.GAUGE_HEIGHT + 12
+    surface.blit(text, (x, y))
+
+
 def draw_menu(surface, fonts, title, items, selected, message=None):
     """画面を暗くして、タイトル・メッセージ・選択式メニューを描く。選択中の項目は白く強調。"""
     global _overlay_cache

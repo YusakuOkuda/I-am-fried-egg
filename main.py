@@ -1,11 +1,11 @@
-"""ゲームの起動点。段階5:耐久度・ダメージ・ゲームオーバー。
+"""ゲームの起動点。段階6:チェックポイント・トースト。
 
 操作:
   A / ←  : 左へ移動
   D / →  : 右へ移動
   Space  : ジャンプ
   F3     : デバッグ表示の切替
-  R      : 卵を初期位置に戻す(開発用)
+  R      : ステージを最初からやり直す(開発用。チェックポイントも解除)
   K      : 耐久度を0にする(開発用。ゲームオーバーの確認)
   G      : 卵を落下限界の下へ移す(開発用。落下ゲームオーバーの確認)
   Esc    : 終了
@@ -29,10 +29,20 @@ GAME_OVER_ITEMS = ["チェックポイントから再開", "タイトルへ戻�
 CONFIRM_ITEMS = ["はい", "いいえ"]
 
 
-def restart_stage(egg, stage, camera):
-    """卵をステージの開始位置に戻す(耐久度も満タン)。チェックポイントは段階6で追加する。"""
-    egg.reset(*stage.egg_start)
-    camera.snap_to(*stage.egg_start)  # リセット時はカメラも即座に移動
+def respawn(egg, stage, camera, from_checkpoint):
+    """卵を復活させる。
+
+    from_checkpoint が True で、チェックポイントを通過済みなら、保存した状態(位置・耐久度・
+    トーストの取得状態)に戻す。それ以外はステージの最初からやり直す。
+    """
+    if from_checkpoint and stage.checkpoint_state is not None:
+        state = stage.restore_checkpoint()
+        egg.reset(state["x"], state["y"], state["hp"])
+        camera.snap_to(state["x"], state["y"])   # 復活時はカメラも即座に移動
+    else:
+        stage.reset_progress()
+        egg.reset(*stage.egg_start)
+        camera.snap_to(*stage.egg_start)
 
 
 def check_game_over(egg, stage):
@@ -55,6 +65,7 @@ def main():
     stage = Stage(space, 1)
     egg = Egg(space, *stage.egg_start)
     physics.register_egg_collisions(space, egg.add_impact)
+    physics.register_item_collisions(space, stage.on_toast_touched, stage.on_checkpoint_touched)
     camera = Camera(stage.width, stage.height)
     camera.snap_to(*stage.egg_start)
 
@@ -104,8 +115,8 @@ def main():
                     menu_index = (menu_index + 1) % len(items)
                 elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     if not confirming:
-                        if menu_index == 0:      # チェックポイントから再開(今はステージの最初から)
-                            restart_stage(egg, stage, camera)
+                        if menu_index == 0:      # チェックポイントから再開(未通過ならステージの最初から)
+                            respawn(egg, stage, camera, from_checkpoint=True)
                             state = STATE_PLAYING
                             accumulator = 0.0
                             jump_requested = False
@@ -140,6 +151,8 @@ def main():
                 physics.limit_speed(egg.body, config.MAX_SPEED)
                 egg.update_ground_state(config.PHYSICS_DT)
                 egg.update_damage(config.PHYSICS_DT)
+                stage.process_items(egg)
+                stage.update(config.PHYSICS_DT)
                 accumulator -= config.PHYSICS_DT
                 steps += 1
                 if check_game_over(egg, stage):
@@ -148,7 +161,7 @@ def main():
                 accumulator = 0.0  # 追いつけない分は捨てる
 
             if reset_requested:
-                restart_stage(egg, stage, camera)
+                respawn(egg, stage, camera, from_checkpoint=False)
                 accumulator = 0.0
             else:
                 message = check_game_over(egg, stage)
@@ -170,11 +183,13 @@ def main():
         stage.draw_background(screen, camera)
         stage.draw(screen, camera)
         egg.draw(screen, camera)
+        stage.draw_popups(screen, camera, fonts["ui"])
         screen.blit(
             fonts["debug"].render(
                 "A/D or Arrows: move   Space: jump   F3: debug   R: reset   Esc: quit",
                 True, config.COLOR_TEXT), (16, 12))
         ui.draw_durability_gauge(screen, fonts["ui"], egg.durability.hp, egg.durability.max_hp)
+        ui.draw_toast_count(screen, fonts["ui"], stage.toast_count, stage.toast_total)
 
         if state == STATE_GAME_OVER:
             if confirming:
@@ -185,7 +200,7 @@ def main():
                              message=game_over_message)
 
         if show_debug:
-            draw_debug(screen, fonts["debug"], egg, steps, clock.get_fps(), camera, state)
+            draw_debug(screen, fonts["debug"], egg, steps, clock.get_fps(), camera, state, stage)
         pygame.display.flip()
 
     pygame.quit()

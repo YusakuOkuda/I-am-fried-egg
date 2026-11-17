@@ -7,7 +7,7 @@ import pygame
 import config
 
 
-def draw_debug(surface, font, egg, steps_this_frame, fps, camera, game_state):
+def draw_debug(surface, font, egg, steps_this_frame, fps, camera, game_state, stage):
     body = egg.body
     durability = egg.durability
 
@@ -24,9 +24,19 @@ def draw_debug(surface, font, egg, steps_this_frame, fps, camera, game_state):
         f"camera: ({camera.x:.1f}, {camera.y:.1f})",
         f"hp: {durability.hp}/{durability.max_hp}   invincible: {durability.invincible_timer:.2f}s",
         f"last damage: {durability.last_event}",
-        "dev keys: R reset / K hp=0 / G fall-limit test",
+        f"checkpoint: {'ACTIVE' if stage.checkpoint and stage.checkpoint.active else 'inactive'}"
+        f"   saved: {_saved_text(stage)}",
+        f"toasts: {stage.toast_count}/{stage.toast_total}",
+        "dev keys: R full reset / K hp=0 / G fall-limit test",
     ]
     y = 40
     for line in lines:
         surface.blit(font.render(line, True, config.COLOR_DEBUG), (16, y))
         y += 24
+
+
+def _saved_text(stage):
+    state = stage.checkpoint_state
+    if state is None:
+        return "-"
+    return f"pos=({state['x']:.0f}, {state['y']:.0f}) hp={state['hp']} toasts={sorted(state['toasts'])}"

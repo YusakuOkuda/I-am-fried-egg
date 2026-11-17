@@ -62,6 +62,12 @@ class Durability:
         self.invincible_timer = max(0.0, self.invincible_timer - dt)
         self.flash_timer = max(0.0, self.flash_timer - dt)
 
+    def heal(self, amount):
+        """耐久度を回復する(最大値を超えない)。実際に回復した量を返す。"""
+        before = self.hp
+        self.hp = min(self.max_hp, self.hp + amount)
+        return self.hp - before
+
     def take_damage(self, kind, speed, amount, invincible_time):
         """ダメージを与える。無敵中なら無効。ダメージが入ったら True。"""
         if amount <= 0:

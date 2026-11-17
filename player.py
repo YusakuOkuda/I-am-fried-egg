@@ -116,8 +116,12 @@ class Egg:
     def _check_arbiter(self, arbiter):
         if len(arbiter.contact_point_set.points) == 0:
             return
+        shape_a, shape_b = arbiter.shapes
+        other = shape_b if shape_a is self.shape else shape_a
+        if other.sensor:
+            return                # トーストなどのセンサーは足場ではない
         normal = arbiter.normal  # shapes[0] から shapes[1] へ向かう法線
-        if arbiter.shapes[0] is not self.shape:
+        if shape_a is not self.shape:
             normal = -normal      # 卵から相手へ向かう向きに揃える
         # 卵から見て「下向き(Yプラス)」に近い面なら床
         if normal.y > config.GROUND_NORMAL_MIN_Y:
