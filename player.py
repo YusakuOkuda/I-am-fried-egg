@@ -102,8 +102,6 @@ class Egg:
                     (force, 0),
                     body.local_to_world(body.center_of_gravity)
                 )
-                force = config.EGG_MASS * config.MOVE_ACCEL * ratio * move_dir
-                body.apply_force_at_world_point((force, 0), body.local_to_world(body.center_of_gravity))
             # 転がすトルク(Y下向き座標では、正の角度が右回り=右へ転がる向き)
             if body.angular_velocity * move_dir < config.MAX_ANGULAR_SPEED:
                 body.torque = body.moment * config.MOVE_TORQUE_ACCEL * ratio * move_dir
