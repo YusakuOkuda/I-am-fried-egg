@@ -11,10 +11,6 @@ import config
 # Windows に入っている日本語フォントの候補(上から順に探す)
 _JAPANESE_FONT_NAMES = ["meiryo", "yugothic", "yugothicui", "msgothic", "msuigothic"]
 
-# 操作ガイドの見た目(小さい部品なのでこのファイルに置く)
-GUIDE_BG_COLOR = (255, 255, 255, 170)
-GUIDE_PADDING = 10
-
 _overlay_cache = None
 
 
@@ -29,6 +25,7 @@ def _japanese_font(size):
 def load_fonts():
     return {
         "debug": pygame.font.Font(None, 26),   # 英数字のみ(デバッグ・操作説明用)
+        "small": _japanese_font(22),
         "ui": _japanese_font(26),
         "menu": _japanese_font(34),
         "title": _japanese_font(72),
@@ -106,21 +103,3 @@ def draw_menu(surface, fonts, title, items, selected, message=None):
         pygame.draw.rect(surface, bg, rect, border_radius=14)
         text = fonts["menu"].render(item, True, fg)
         surface.blit(text, text.get_rect(center=rect.center))
-
-
-def draw_stage_label(surface, font, number):
-    """画面の上中央に「ステージ N」を描く。"""
-    text = font.render(f"ステージ {number}", True, config.COLOR_TEXT)
-    x = (config.WINDOW_WIDTH - text.get_width()) // 2
-    surface.blit(text, (x, config.UI_MARGIN - 2))
-
-
-def draw_controls_guide(surface, font, text):
-    """画面の左下に操作ガイドを1行で常時表示する(薄い白地の上に描いて読みやすくする)。"""
-    text_surf = font.render(text, True, config.COLOR_TEXT)
-    panel = pygame.Surface(
-        (text_surf.get_width() + GUIDE_PADDING * 2, text_surf.get_height() + GUIDE_PADDING * 2),
-        pygame.SRCALPHA)
-    pygame.draw.rect(panel, GUIDE_BG_COLOR, panel.get_rect(), border_radius=10)
-    panel.blit(text_surf, (GUIDE_PADDING, GUIDE_PADDING))
-    surface.blit(panel, (config.UI_MARGIN, config.WINDOW_HEIGHT - config.UI_MARGIN - panel.get_height()))

@@ -1,18 +1,20 @@
-"""ステージデータの読み込み、物理空間への登録、描画、トースト・チェックポイントの管理を担当するファイル。"""
+"""ステージデータの読み込み、物理空間への登録、描画、トースト・チェックポイント・ゴールの管理を担当するファイル。"""
 
 import pygame
 
 import config
 import physics
 from moving_platform import MovingPlatform
-from stages import stage1, test_stage
+from stages import stage1, stage2, stage3, test_stage
 from stages.helpers import rect
 
-# ステージ番号とデータの対応(段階8で stage2, stage3 を追加する)
+# ステージ番号とデータの対応
 # 0 は開発用のテストステージ(動く足場・トゲの確認用)。python main.py 0 で起動する
 STAGE_DATA = {
     0: test_stage.STAGE,
     1: stage1.STAGE,
+    2: stage2.STAGE,
+    3: stage3.STAGE,
 }
 
 
@@ -31,6 +33,13 @@ class Checkpoint:
         self.base_y = base_y    # ポールの足元の高さ
         self.shape = shape
         self.active = False
+
+
+class Goal:
+    def __init__(self, x, base_y, shape):
+        self.x = x
+        self.base_y = base_y    # フライパンの底の高さ
+        self.shape = shape
 
 
 class Stage:
@@ -72,10 +81,23 @@ class Stage:
                 config.COLLISION_CHECKPOINT)
             self.checkpoint = Checkpoint(x, base_y, shape)
 
+        # --- ゴール(フライパン) ---
+        self.goal = None
+        if "goal" in data:
+            x, base_y = data["goal"]
+            shape = physics.add_sensor(
+                space,
+                rect(x - config.GOAL_WIDTH / 2, base_y - config.GOAL_HEIGHT,
+                     config.GOAL_WIDTH, config.GOAL_HEIGHT),
+                config.COLLISION_GOAL)
+            self.goal = Goal(x, base_y, shape)
+        self.cleared = False           # ゴールに到達したか
+
         self.checkpoint_state = None   # チェックポイントで保存した状態(メモリ上のみ)
         self.popups = []               # トースト取得表示
         self._touched_toasts = []      # 物理ステップ中に触れたものを集めておく
         self._touched_checkpoint = False
+        self._touched_goal = False
 
     # ---------- トースト数 ----------
     @property
@@ -92,6 +114,9 @@ class Stage:
 
     def on_checkpoint_touched(self, shape):
         self._touched_checkpoint = True
+
+    def on_goal_touched(self, shape):
+        self._touched_goal = True
 
     # ---------- 動く足場 ----------
     def prepare_physics_step(self, dt):
@@ -124,6 +149,10 @@ class Stage:
                 and not self.checkpoint.active and not egg.durability.is_broken):
             self.checkpoint.active = True
             self._save_checkpoint(egg)
+
+        touched_goal, self._touched_goal = self._touched_goal, False
+        if touched_goal and self.goal is not None and not egg.durability.is_broken:
+            self.cleared = True
 
     def update(self, dt):
         """取得表示のタイマーを進める。"""
@@ -171,6 +200,8 @@ class Stage:
         self.popups.clear()
         self._touched_toasts.clear()
         self._touched_checkpoint = False
+        self._touched_goal = False
+        self.cleared = False
 
     # ---------- 描画 ----------
     def draw_background(self, surface, camera):
@@ -197,6 +228,8 @@ class Stage:
             pygame.draw.polygon(surface, config.COLOR_SPIKE_EDGE, points, 2)
         if self.checkpoint is not None:
             self._draw_checkpoint(surface, camera)
+        if self.goal is not None:
+            self._draw_goal(surface, camera)
         for toast in self.toasts:
             if not toast.collected:
                 self._draw_toast(surface, camera, toast)
@@ -229,6 +262,17 @@ class Stage:
         ]
         pygame.draw.polygon(surface, flag_color, flag)
         pygame.draw.polygon(surface, config.COLOR_PLATFORM_EDGE, flag, 2)
+
+    def _draw_goal(self, surface, camera):
+        """ゴール: フライパン(横から見た形。本体、中の面、持ち手)。"""
+        cx, base_y = camera.apply((self.goal.x, self.goal.base_y))
+        handle = pygame.Rect(cx + 34, base_y - 18, 56, 10)
+        pygame.draw.rect(surface, config.COLOR_PAN_HANDLE, handle, border_radius=5)
+        body = pygame.Rect(cx - 42, base_y - 24, 84, 24)
+        pygame.draw.rect(surface, config.COLOR_PAN, body, border_radius=10)
+        inner = pygame.Rect(cx - 38, base_y - 32, 76, 16)
+        pygame.draw.ellipse(surface, config.COLOR_PAN_INNER, inner)
+        pygame.draw.ellipse(surface, config.COLOR_PAN, inner, 3)
 
     def draw_popups(self, surface, camera, font):
         """トースト取得表示(ふわっと上へ昇る文字)。"""

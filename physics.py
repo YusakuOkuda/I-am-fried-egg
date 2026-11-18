@@ -70,8 +70,8 @@ def add_sensor(space, vertices, collision_type):
     return shape
 
 
-def register_item_collisions(space, on_toast, on_checkpoint):
-    """卵がトースト・チェックポイントに触れた瞬間に、触れた形状を on_toast(shape) / on_checkpoint(shape) で通知する。
+def register_item_collisions(space, on_toast, on_checkpoint, on_goal):
+    """卵がトースト・チェックポイント・ゴールに触れた瞬間に、on_toast(shape) / on_checkpoint(shape) / on_goal(shape) で通知する。
 
     ここでは通知だけ。取得や保存の処理は物理ステップの後でまとめて行う。
     """
@@ -81,8 +81,12 @@ def register_item_collisions(space, on_toast, on_checkpoint):
     def checkpoint_begin(arbiter, _space, _data):
         on_checkpoint(arbiter.shapes[1])
 
+    def goal_begin(arbiter, _space, _data):
+        on_goal(arbiter.shapes[1])
+
     space.on_collision(config.COLLISION_EGG, config.COLLISION_TOAST, begin=toast_begin)
     space.on_collision(config.COLLISION_EGG, config.COLLISION_CHECKPOINT, begin=checkpoint_begin)
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_GOAL, begin=goal_begin)
 
 
 def register_egg_collisions(space, on_impact):

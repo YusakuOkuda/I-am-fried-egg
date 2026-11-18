@@ -17,6 +17,7 @@ STAGE = {
     "egg_start": (140, 1000),
     "fall_limit": 1500,
     "checkpoint": (2600, 1080),
+    "goal": (3100, 1080),
     "toasts": [
         (2750, 1045),
     ],

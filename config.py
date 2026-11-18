@@ -31,6 +31,9 @@ COLOR_MOVING_PLATFORM = (170, 196, 230)       # 動く足場(固定足場と見�
 COLOR_MOVING_PLATFORM_EDGE = (95, 120, 165)
 COLOR_SPIKE = (225, 70, 70)                   # トゲ(危険物は赤系)
 COLOR_SPIKE_EDGE = (150, 30, 30)
+COLOR_PAN = (70, 70, 82)                      # フライパン(ゴール)
+COLOR_PAN_INNER = (105, 105, 118)
+COLOR_PAN_HANDLE = (150, 105, 70)
 
 # ---------- 背景 ----------
 GRID_SIZE = 160                     # 背景の格子の間隔(px)
@@ -47,6 +50,7 @@ COLLISION_PLATFORM = 2
 COLLISION_TOAST = 3
 COLLISION_CHECKPOINT = 4
 COLLISION_SPIKE = 5
+COLLISION_GOAL = 6
 
 # ---------- 卵の形 ----------
 EGG_WIDTH = 46
@@ -93,6 +97,12 @@ COLLISION_DAMAGE_PER_SPEED = 0.12
 IMPACT_INVINCIBLE_TIME = 0.3         # 衝撃ダメージを受けた直後の無敵時間(秒)
 DAMAGE_FLASH_TIME = 0.6              # ダメージ後に赤く点滅する時間(秒)
 DAMAGE_FLASH_INTERVAL = 0.08         # 点滅の切り替え間隔(秒)
+
+# ---------- ステージ進行・ゴール ----------
+LAST_STAGE = 3                       # 最終ステージの番号
+STAGE_CLEAR_WAIT = 3.0               # ステージクリア後、次のステージへ移るまでの待ち時間(秒)
+GOAL_WIDTH = 90                      # フライパンの判定の幅(px)
+GOAL_HEIGHT = 50                     # フライパンの判定の高さ(px)
 
 # ---------- トゲ ----------
 SPIKE_DAMAGE = 30                    # トゲに触れたときの固定ダメージ
