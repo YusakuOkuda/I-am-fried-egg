@@ -1,13 +1,15 @@
 """ゲーム全体の進行(画面の状態)を管理するファイル。
 
 状態:
+  TITLE       : タイトル画面
+  STAGE_SELECT: ステージ選択画面
   PLAYING     : プレイ中
   PAUSED      : ポーズ中(物理・足場・カメラ・演出がすべて止まる)
   GAME_OVER   : ゲームオーバー
   STAGE_CLEAR : ステージクリア(約3秒後に次のステージへ)
   GAME_CLEAR  : 最終ステージをクリアした
 
-タイトル画面とステージ選択は次の段階(8-2)で追加する。
+セーブ(クリア状況)は save_manager.py が担当する。
 """
 
 import pygame
@@ -18,8 +20,11 @@ import ui
 from camera import Camera
 from debug import draw_debug
 from player import Egg
+from save_manager import SaveManager
 from stage import Stage
 
+STATE_TITLE = "TITLE"
+STATE_STAGE_SELECT = "STAGE_SELECT"
 STATE_PLAYING = "PLAYING"
 STATE_PAUSED = "PAUSED"
 STATE_GAME_OVER = "GAME_OVER"
@@ -27,24 +32,35 @@ STATE_STAGE_CLEAR = "STAGE_CLEAR"
 STATE_GAME_CLEAR = "GAME_CLEAR"
 
 # メニューの項目 (動作の名前, 表示する文字)
+TITLE_ITEMS = [("start", "ゲーム開始"), ("select", "ステージ選択"), ("quit", "ゲーム終了")]
 PAUSE_ITEMS = [("resume", "再開"), ("title", "タイトルへ戻る")]
 GAME_OVER_ITEMS = [("checkpoint", "チェックポイントから再開"), ("title", "タイトルへ戻る")]
 GAME_CLEAR_ITEMS = [("title", "タイトルへ戻る"), ("again", "もう一度プレイ")]
 CONFIRM_ITEMS = [("yes", "はい"), ("no", "いいえ")]
+STAGE_SELECT_HINT = "↑/↓:選択   Enter:決定   Esc:戻る"
 
 
 class Game:
-    def __init__(self, start_stage):
+    def __init__(self, start_stage=None):
+        """start_stage を指定するとタイトルを飛ばしてそのステージから始める(開発用)。省略するとタイトル画面から。"""
         pygame.init()
         self.screen = pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
         pygame.display.set_caption(config.WINDOW_TITLE)
         self.clock = pygame.time.Clock()
         self.fonts = ui.load_fonts()
 
+        self.save = SaveManager()
+        self.save.load()                 # クリア状況を読み込む(無い・壊れている場合は初期状態)
+
         self.running = True
-        self.show_debug = True
-        self.clear_records = {}      # ステージ番号 → クリア時のトースト取得数(メモリ上のみ。保存しない)
-        self.load_stage(start_stage)
+        self.show_debug = False          # デバッグ表示は通常OFF。F3で切り替える
+        self.clear_records = {}          # ステージ番号 → クリア時のトースト取得数(メモリ上のみ。保存しない)
+        self.space = self.stage = self.egg = self.camera = None
+        self.steps = 0
+        if start_stage is None:
+            self.go_to_title()
+        else:
+            self.load_stage(start_stage)
 
     # ---------- ステージの読み込み ----------
     def load_stage(self, number):
@@ -93,9 +109,41 @@ class Game:
         self.message = message
         self.jump_requested = False
 
-    def go_to_title(self):
-        """タイトル画面は 8-2 で作る。今はゲームを終了する(仮)。"""
-        self.running = False
+    def go_to_title(self, index=0):
+        """タイトル画面へ戻る。プレイ中のステージ(物理空間・卵など)は破棄する。"""
+        self.space = self.stage = self.egg = self.camera = None
+        self.state = STATE_TITLE
+        self.menu_items = TITLE_ITEMS
+        self.menu_index = index
+        self.confirming = False
+        self.message = ""
+        self.accumulator = 0.0
+        self.jump_requested = False
+        self.steps = 0
+
+    def open_stage_select(self):
+        """ステージ選択画面を開く。カーソルは「次に挑戦するステージ」に置く。"""
+        self.state = STATE_STAGE_SELECT
+        self.menu_index = self.save.next_start_stage() - 1    # メニュー番号は 0 始まり
+
+    def move_stage_cursor(self, step):
+        """ステージ選択のカーソルを動かす。未解放のステージは飛ばす(選べない)。"""
+        for _ in range(config.LAST_STAGE):
+            self.menu_index = (self.menu_index + step) % config.LAST_STAGE
+            if self.save.is_unlocked(self.menu_index + 1):
+                break
+
+    def handle_stage_select_key(self, key):
+        if key == pygame.K_UP:
+            self.move_stage_cursor(-1)
+        elif key == pygame.K_DOWN:
+            self.move_stage_cursor(1)
+        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            number = self.menu_index + 1
+            if self.save.is_unlocked(number):
+                self.load_stage(number)
+        elif key == pygame.K_ESCAPE:
+            self.go_to_title(index=1)          # カーソルは「ステージ選択」に置く
 
     # ---------- メインループ ----------
     def run(self):
@@ -129,7 +177,9 @@ class Game:
                 self.egg.durability.hp = 0                  # 開発用
             elif key == pygame.K_g:                         # 開発用
                 self.egg.body.position = (self.egg.body.position.x, self.stage.fall_limit + 50)
-        elif self.state in (STATE_PAUSED, STATE_GAME_OVER, STATE_GAME_CLEAR):
+        elif self.state == STATE_STAGE_SELECT:
+            self.handle_stage_select_key(key)
+        elif self.state in (STATE_TITLE, STATE_PAUSED, STATE_GAME_OVER, STATE_GAME_CLEAR):
             self.handle_menu_key(key)
         # STATE_STAGE_CLEAR 中はキー入力を受け付けない
 
@@ -152,7 +202,13 @@ class Game:
         self.menu_index = 0
 
     def activate(self, action):
-        if action == "resume":
+        if action == "start":
+            self.load_stage(self.save.next_start_stage())    # 最も進んだ未クリアステージから
+        elif action == "select":
+            self.open_stage_select()
+        elif action == "quit":
+            self.running = False
+        elif action == "resume":
             self.state = STATE_PLAYING
         elif action == "checkpoint":
             self.respawn(from_checkpoint=True)
@@ -164,7 +220,7 @@ class Game:
                 self.confirming = True           # 確認画面を出す
                 self.menu_index = 1              # 誤操作防止のため「いいえ」を最初に選ぶ
         elif action == "again":
-            self.load_stage(1)                   # ステージ1から。クリア状況の保存は 8-2 で追加
+            self.load_stage(1)                   # ステージ1から。保存済みのクリア状況はそのまま残る
         elif action == "yes":
             self.go_to_title()
         elif action == "no":
@@ -240,6 +296,7 @@ class Game:
 
     def begin_stage_clear(self):
         self.clear_records[self.stage.number] = self.stage.toast_count   # 取得数を記録(保存はしない)
+        self.save.mark_cleared(self.stage.number)    # クリア状況を保存(解放状況はここから決まる)
         self.state = STATE_STAGE_CLEAR
         self.clear_timer = config.STAGE_CLEAR_WAIT
         self.jump_requested = False
@@ -253,6 +310,18 @@ class Game:
     # ---------- 描画 ----------
     def draw(self):
         screen, fonts = self.screen, self.fonts
+        if self.state == STATE_TITLE:
+            ui.draw_title_screen(screen, fonts, config.WINDOW_TITLE,
+                                 [label for _, label in self.menu_items], self.menu_index)
+            pygame.display.flip()
+            return
+        if self.state == STATE_STAGE_SELECT:
+            entries = [(f"ステージ {n}", self.save.status(n))
+                       for n in range(1, config.LAST_STAGE + 1)]
+            ui.draw_stage_select(screen, fonts, "ステージ選択", entries, self.menu_index,
+                                 STAGE_SELECT_HINT)
+            pygame.display.flip()
+            return
         stage, egg, camera = self.stage, self.egg, self.camera
 
         stage.draw_background(screen, camera)

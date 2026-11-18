@@ -11,8 +11,8 @@
   G      : 卵を落下限界の下へ移す(開発用。落下ゲームオーバーの確認)
 
 起動方法:
-  python main.py     : ステージ1から
-  python main.py 2   : ステージ2から(開発用。0 はテストステージ)
+  python main.py     : タイトル画面から
+  python main.py 2   : ステージ2から(開発用。タイトルを飛ばす。0 はテストステージ)
 """
 
 import sys
@@ -21,7 +21,7 @@ from game_manager import Game
 
 
 def main():
-    start_stage = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    start_stage = int(sys.argv[1]) if len(sys.argv) > 1 else None
     Game(start_stage).run()
 
 
