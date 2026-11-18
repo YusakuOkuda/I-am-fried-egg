@@ -1,15 +1,28 @@
 """フォントの読み込みと、耐久度ゲージ・メニューの描画を担当するファイル。
 
-注意: 日本語フォントは今は「Windowsに入っているフォント」を探して使う仮の方式。
-最終的には、ゲームに同梱したフォント(M PLUS Rounded 1c など)に切り替える予定。
+日本語フォントは、ゲームに同梱した「M PLUS Rounded 1c」(assets/fonts/ フォルダ)を使う。
+  ライセンス: SIL Open Font License 1.1(assets/fonts/OFL.txt)
+  入手元: https://fonts.google.com/specimen/M+PLUS+Rounded+1c
+同梱フォントなので、どのWindowsパソコンでも同じ見た目になる。
+フォントファイルが見つからないときだけ、Windows に入っている日本語フォントで代用する(ログに記録)。
 """
+
+import logging
+import sys
+from pathlib import Path
 
 import pygame
 
 import config
 
-# Windows に入っている日本語フォントの候補(上から順に探す)
-_JAPANESE_FONT_NAMES = ["meiryo", "yugothic", "yugothicui", "msgothic", "msuigothic"]
+logger = logging.getLogger("lost_egg")   # ログの出力先設定は第9段階で行う
+
+# 同梱フォントのファイル(ゲームのフォルダからの相対パス)
+FONT_REGULAR_FILE = "assets/fonts/MPLUSRounded1c-Regular.ttf"
+FONT_BOLD_FILE = "assets/fonts/MPLUSRounded1c-Bold.ttf"
+
+# 同梱フォントが無いときの代用: Windows に入っている日本語フォントの候補(上から順に探す)
+_FALLBACK_FONT_NAMES = ["meiryo", "yugothic", "yugothicui", "msgothic", "msuigothic"]
 
 # ステージ選択画面の見た目(状態ごとの札の文字と色、未解放行の色)
 STAGE_STATUS_BADGE = {
@@ -23,21 +36,39 @@ STAGE_LOCKED_TEXT = (150, 155, 170)
 _overlay_cache = None
 
 
-def _japanese_font(size):
-    for name in _JAPANESE_FONT_NAMES:
+def _base_dir():
+    """ゲームのフォルダ。exe化(PyInstaller)した場合は、同梱ファイルが展開される場所を返す。"""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parent
+
+
+def _find_fallback_font():
+    for name in _FALLBACK_FONT_NAMES:
         path = pygame.font.match_font(name)
         if path:
-            return pygame.font.Font(path, size)
-    return pygame.font.Font(None, size)   # 見つからない場合(日本語は文字化けする)
+            return path
+    return None
+
+
+def _font_path(relative_file):
+    """同梱フォントのパスを返す。見つからなければ代用フォントのパス(それも無ければ None)を返す。"""
+    path = _base_dir() / relative_file
+    if path.is_file():
+        return str(path)
+    logger.error("同梱フォントが見つかりません: %s。代用フォントを使います", path)
+    return _find_fallback_font()
 
 
 def load_fonts():
+    regular = _font_path(FONT_REGULAR_FILE)
+    bold = _font_path(FONT_BOLD_FILE)
     return {
-        "debug": pygame.font.Font(None, 26),   # 英数字のみ(デバッグ・操作説明用)
-        "small": _japanese_font(22),
-        "ui": _japanese_font(26),
-        "menu": _japanese_font(34),
-        "title": _japanese_font(72),
+        "debug": pygame.font.Font(None, 26),   # 英数字のみ(デバッグ表示用)
+        "small": pygame.font.Font(regular, 22),
+        "ui": pygame.font.Font(regular, 26),
+        "menu": pygame.font.Font(bold, 34),
+        "title": pygame.font.Font(bold, 72),
     }
 
 
