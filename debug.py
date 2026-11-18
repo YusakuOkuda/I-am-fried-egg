@@ -136,7 +136,8 @@ def draw_debug(surface, font, egg, steps_this_frame, fps, camera, game_state, st
         f"checkpoint: {'ACTIVE' if stage.checkpoint and stage.checkpoint.active else 'inactive'}"
         f"   saved: {_saved_text(stage)}",
         f"toasts: {stage.toast_count}/{stage.toast_total}   platform time: {stage.time:.1f}s",
-        "keys: F3 debug / R full reset / K hp=0 / G fall-limit test",
+        "keys: F3 debug / R full reset / K hp=0 / G fall-limit test" if config.DEV_MODE
+        else "keys: F3 debug",
     ]
     y = 40
     for line in lines:

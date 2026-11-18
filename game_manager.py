@@ -199,11 +199,11 @@ class Game:
                 self.jump_requested = True
             elif key == pygame.K_F3:
                 self.show_debug = not self.show_debug
-            elif key == pygame.K_r:
-                self.reset_requested = True                 # 開発用
-            elif key == pygame.K_k:
-                self.egg.durability.hp = 0                  # 開発用
-            elif key == pygame.K_g:                         # 開発用
+            elif config.DEV_MODE and key == pygame.K_r:     # 開発用(exe版では無効)
+                self.reset_requested = True
+            elif config.DEV_MODE and key == pygame.K_k:     # 開発用(exe版では無効)
+                self.egg.durability.hp = 0
+            elif config.DEV_MODE and key == pygame.K_g:     # 開発用(exe版では無効)
                 self.egg.body.position = (self.egg.body.position.x, self.stage.fall_limit + 50)
         elif self.state == STATE_STAGE_SELECT:
             self.handle_stage_select_key(key)

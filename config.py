@@ -4,6 +4,16 @@
 座標系は Pygame と同じ (左上が原点、Y軸は下向きが正)。
 """
 
+import os
+import sys
+
+# ---------- 開発モード ----------
+# Python から起動したとき(開発中)は True、exe にしたとき(PyInstaller)は False になる。
+# True のあいだだけ、開発用キー(R / K / G)と、起動時のステージ番号指定(python main.py 2)が使える。
+# 環境変数 LOST_EGG_DEV を 1 か 0 にすると、自動の判定を上書きできる(exe版と同じ動作の確認用)。
+_IS_EXE = getattr(sys, "frozen", False)
+DEV_MODE = os.environ.get("LOST_EGG_DEV", "0" if _IS_EXE else "1") == "1"
+
 # ---------- 画面 ----------
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720

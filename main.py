@@ -6,9 +6,11 @@
   Space  : ジャンプ
   Esc    : ポーズ(メニューでは ↑/↓ で選び、Enter で決定、Esc で戻る)
   F3     : デバッグ表示の切替
-  R      : ステージを最初からやり直す(開発用。チェックポイントも解除)
-  K      : 耐久度を0にする(開発用。ゲームオーバーの確認)
-  G      : 卵を落下限界の下へ移す(開発用。落下ゲームオーバーの確認)
+
+開発用(Python から起動したときだけ有効。exe版では無効。config.py の DEV_MODE):
+  R      : ステージを最初からやり直す(チェックポイントも解除)
+  K      : 耐久度を0にする(ゲームオーバーの確認)
+  G      : 卵を落下限界の下へ移す(落下ゲームオーバーの確認)
 
 起動方法:
   python main.py     : タイトル画面から
@@ -21,8 +23,25 @@ import sys
 import pygame
 import pymunk
 
+import config
 from debug import setup_logging
 from game_manager import Game
+from stage import STAGE_DATA
+
+
+def parse_start_stage(logger):
+    """開発用: python main.py 2 のようにステージ番号を指定されたら、その番号を返す。exe版では使えない。"""
+    if not config.DEV_MODE or len(sys.argv) < 2:
+        return None
+    try:
+        number = int(sys.argv[1])
+    except ValueError:
+        logger.warning("ステージ番号として読めないため無視します: %r", sys.argv[1])
+        return None
+    if number not in STAGE_DATA:
+        logger.warning("存在しないステージ番号のため無視します: %d", number)
+        return None
+    return number
 
 
 def main():
@@ -32,8 +51,7 @@ def main():
                 sys.version.split()[0], pygame.version.ver, pymunk.version)
     logger.info("ログファイル: %s", log_path)
     try:
-        start_stage = int(sys.argv[1]) if len(sys.argv) > 1 else None
-        Game(start_stage).run()
+        Game(parse_start_stage(logger)).run()
     finally:
         # 想定外のエラーは debug.py の仕組みで、エラーの詳細がログに記録される
         logger.info("ゲーム終了")
