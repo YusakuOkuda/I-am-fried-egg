@@ -53,10 +53,12 @@ class Egg:
         self.time_since_grounded = 999.0
         self.jump_lockout = 0.0
         self.ground_normal = (0.0, 0.0)
+        self.ground_velocity = (0.0, 0.0)   # 乗っている足場の速度(動く足場の上で操作を正しく効かせるため)
 
         # 耐久度と、物理ステップ中に集めた衝撃(ステップ後にまとめて処理する)
         self.durability = damage.Durability()
         self.pending_impacts = []
+        self.touching_spike = False
 
     # ---------- 状態リセット(開発用・ゲームオーバーからの再開用) ----------
     def reset(self, x, y, hp=None):
@@ -68,6 +70,8 @@ class Egg:
         self.grounded = False
         self.time_since_grounded = 999.0
         self.jump_lockout = 0.0
+        self.ground_velocity = (0.0, 0.0)
+        self.touching_spike = False
         self.durability.reset(hp)
         self.pending_impacts.clear()
 
@@ -88,8 +92,10 @@ class Egg:
         # --- 左右移動 ---
         ratio = 1.0 if self.grounded else config.AIR_CONTROL_RATIO
         if move_dir != 0:
-            # 横方向の力(最高速度に達していたら加えない)
-            if body.velocity.x * move_dir < config.MAX_MOVE_SPEED:
+            # 横方向の力(最高速度に達していたら加えない)。
+            # 足場に乗っているときは、足場から見た速度で判定する(足場の速度は卵にそのまま残る)
+            relative_vx = body.velocity.x - self.ground_velocity[0]
+            if relative_vx * move_dir < config.MAX_MOVE_SPEED:
                 force = config.EGG_MASS * config.MOVE_ACCEL * ratio * move_dir
                 body.apply_force_at_world_point((force, 0), body.position)
             # 転がすトルク(Y下向き座標では、正の角度が右回り=右へ転がる向き)
@@ -104,6 +110,7 @@ class Egg:
         """物理ステップ後に、接触情報(法線)から接地を判定する。"""
         self.grounded = False
         self.ground_normal = (0.0, 0.0)
+        self.ground_velocity = (0.0, 0.0)
         self.body.each_arbiter(self._check_arbiter)
 
         if self.grounded and self.jump_lockout <= 0.0:
@@ -112,6 +119,8 @@ class Egg:
             self.time_since_grounded += dt
             if self.jump_lockout > 0.0:
                 self.grounded = False
+        if not self.grounded:
+            self.ground_velocity = (0.0, 0.0)   # 空中では足場の速度を基準にしない(速度はそのまま引き継ぐ)
 
     def _check_arbiter(self, arbiter):
         if len(arbiter.contact_point_set.points) == 0:
@@ -127,18 +136,35 @@ class Egg:
         if normal.y > config.GROUND_NORMAL_MIN_Y:
             self.grounded = True
             self.ground_normal = (normal.x, normal.y)
+            ground_velocity = other.body.velocity
+            self.ground_velocity = (ground_velocity.x, ground_velocity.y)
 
     # ---------- 1ステップ後のダメージ処理 ----------
     def add_impact(self, kind, speed):
         """衝突コールバックから呼ばれる。ここでは記録だけして、処理は update_damage で行う。"""
         self.pending_impacts.append((kind, speed))
 
-    def update_damage(self, dt):
-        """タイマーを進め、このステップで集めた衝撃からダメージを1回だけ与える。
+    def add_spike_touch(self):
+        """トゲとの接触コールバックから呼ばれる。記録だけして、処理は update_damage で行う。"""
+        self.touching_spike = True
 
-        同じステップに着地と壁衝突が同時に起きても、いちばん大きい1つだけを採用する(二重計算の防止)。
+    def update_damage(self, dt):
+        """タイマーを進め、このステップのダメージを処理する。
+
+        1. トゲ(固定ダメージ)。無敵中でなければダメージ。ダメージを受けたステップの衝撃は無視する。
+        2. 衝撃(着地・衝突)。同じステップに複数あっても、いちばん大きい1つだけを採用する。
+        どちらも無敵時間中は追加ダメージを受けない(二重計算の防止)。
         """
         self.durability.update(dt)
+
+        if self.touching_spike:
+            self.touching_spike = False
+            if not self.durability.is_invincible:
+                self.durability.take_damage(
+                    damage.KIND_SPIKE, 0.0, config.SPIKE_DAMAGE, config.SPIKE_INVINCIBLE_TIME)
+                self.pending_impacts.clear()   # トゲと同時の衝撃は数えない
+                return
+
         if not self.pending_impacts:
             return
         impacts = self.pending_impacts

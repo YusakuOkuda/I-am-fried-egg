@@ -32,6 +32,35 @@ def add_platforms(space, platforms):
     return shapes
 
 
+def add_spikes(space, triangles):
+    """トゲ(三角形の頂点リストのリスト)を静的ボディとして追加し、形状のリストを返す。
+
+    トゲは「押し返す固い物体」だが、種類(collision_type)が足場と別なので、
+    通常の衝突ダメージ・着地ダメージの対象にはならず、トゲ専用の固定ダメージだけになる。
+    """
+    shapes = []
+    for vertices in triangles:
+        shape = pymunk.Poly(space.static_body, vertices)
+        shape.friction = config.PLATFORM_FRICTION
+        shape.elasticity = config.PLATFORM_ELASTICITY
+        shape.collision_type = config.COLLISION_SPIKE
+        space.add(shape)
+        shapes.append(shape)
+    return shapes
+
+
+def register_spike_collisions(space, on_spike):
+    """卵がトゲに触れている間、物理ステップごとに on_spike() を呼ぶ。
+
+    触れ続けている間も呼ばれるので、無敵時間が終わるとまたダメージが入る。
+    ダメージを与えるかどうかの判断(無敵時間)は耐久度側で行う。
+    """
+    def pre_solve(_arbiter, _space, _data):
+        on_spike()
+
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_SPIKE, pre_solve=pre_solve)
+
+
 def add_sensor(space, vertices, collision_type):
     """触れても押し返さない当たり判定(センサー)を追加し、形状を返す。トースト・チェックポイント用。"""
     shape = pymunk.Poly(space.static_body, vertices)
@@ -60,16 +89,20 @@ def register_egg_collisions(space, on_impact):
     """卵と足場が「触れ始めた瞬間」に on_impact(kind, speed) を呼ぶように登録する。
 
     kind  : damage.KIND_LANDING(床と判定される面)か damage.KIND_COLLISION(それ以外)
-    speed : 触れる直前の、面に向かう速さ(px/秒)。0以下(離れる向き)のときは呼ばない
+    speed : 触れる直前の、面に向かう速さ(px/秒。動く足場は相対速度)。0以下(離れる向き)のときは呼ばない
 
     ここでは判定の結果を伝えるだけ。耐久度の変更は物理ステップの後でまとめて行う。
     (ステップの途中で物理世界を書き換えないため)
     """
     def begin(arbiter, _space, _data):
-        egg_shape, _platform_shape = arbiter.shapes   # 登録した順(卵, 足場)で返る
+        egg_shape, platform_shape = arbiter.shapes    # 登録した順(卵, 足場)で返る
         normal = arbiter.normal                       # 卵から足場へ向かう向き
-        velocity = egg_shape.body.velocity            # このステップの重力を加える前の速度
-        speed = velocity.x * normal.x + velocity.y * normal.y
+        # 足場が動いていても正しく測れるように、足場から見た卵の速度(相対速度)を使う
+        egg_velocity = egg_shape.body.velocity        # このステップの重力を加える前の速度
+        platform_velocity = platform_shape.body.velocity
+        relative_x = egg_velocity.x - platform_velocity.x
+        relative_y = egg_velocity.y - platform_velocity.y
+        speed = relative_x * normal.x + relative_y * normal.y
         if speed <= 0.0:
             return
         if normal.y > config.GROUND_NORMAL_MIN_Y:

@@ -4,11 +4,14 @@ import pygame
 
 import config
 import physics
-from stages import stage1
+from moving_platform import MovingPlatform
+from stages import stage1, test_stage
 from stages.helpers import rect
 
 # ステージ番号とデータの対応(段階8で stage2, stage3 を追加する)
+# 0 は開発用のテストステージ(動く足場・トゲの確認用)。python main.py 0 で起動する
 STAGE_DATA = {
+    0: test_stage.STAGE,
     1: stage1.STAGE,
 }
 
@@ -40,6 +43,11 @@ class Stage:
         self.egg_start = data["egg_start"]
         self.fall_limit = data["fall_limit"]
         self.shapes = physics.add_platforms(space, data["platforms"])
+
+        # --- 動く足場・トゲ ---
+        self.moving_platforms = [MovingPlatform(space, spec) for spec in data.get("moving_platforms", [])]
+        self.spike_shapes = physics.add_spikes(space, data.get("spikes", []))
+        self.time = 0.0                # 動く足場の時計(秒)。物理ステップを進めたときだけ進む
 
         # --- トースト ---
         self.toasts = []
@@ -85,6 +93,17 @@ class Stage:
     def on_checkpoint_touched(self, shape):
         self._touched_checkpoint = True
 
+    # ---------- 動く足場 ----------
+    def prepare_physics_step(self, dt):
+        """物理ステップの直前に呼ぶ。動く足場の速度を設定し、足場の時計を進める。"""
+        for platform in self.moving_platforms:
+            platform.prepare_step(self.time, dt)
+        self.time += dt
+
+    def _snap_platforms(self):
+        for platform in self.moving_platforms:
+            platform.snap_to_time(self.time)
+
     # ---------- 1ステップ後の処理 ----------
     def process_items(self, egg):
         """このステップで触れたトースト・チェックポイントを処理する。"""
@@ -120,17 +139,20 @@ class Stage:
             "y": egg.body.position.y,
             "hp": egg.durability.hp,
             "toasts": frozenset(t.index for t in self.toasts if t.collected),
+            "time": self.time,          # 動く足場の位置(ステージ内の進行状態)
         }
 
     def restore_checkpoint(self):
         """保存した状態にトーストの取得状態を戻し、その状態(位置・耐久度)を返す。
 
         チェックポイント通過後に取得したトーストは未取得に戻る。取得数は取得状態から数えるので自動的に戻る。
-        チェックポイントの有効状態は維持する。
+        動く足場も、保存したときの位置に戻す。チェックポイントの有効状態は維持する。
         """
         state = self.checkpoint_state
         for toast in self.toasts:
             toast.collected = toast.index in state["toasts"]
+        self.time = state["time"]
+        self._snap_platforms()
         self._clear_transient()
         return state
 
@@ -141,6 +163,8 @@ class Stage:
         if self.checkpoint is not None:
             self.checkpoint.active = False
         self.checkpoint_state = None
+        self.time = 0.0
+        self._snap_platforms()
         self._clear_transient()
 
     def _clear_transient(self):
@@ -165,6 +189,12 @@ class Stage:
             points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
             pygame.draw.polygon(surface, config.COLOR_PLATFORM, points)
             pygame.draw.polygon(surface, config.COLOR_PLATFORM_EDGE, points, 3)
+        for platform in self.moving_platforms:
+            platform.draw(surface, camera)
+        for shape in self.spike_shapes:
+            points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
+            pygame.draw.polygon(surface, config.COLOR_SPIKE, points)
+            pygame.draw.polygon(surface, config.COLOR_SPIKE_EDGE, points, 2)
         if self.checkpoint is not None:
             self._draw_checkpoint(surface, camera)
         for toast in self.toasts:

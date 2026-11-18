@@ -10,6 +10,7 @@ import config
 
 KIND_LANDING = "landing"      # 着地(床と判定される面に当たった)
 KIND_COLLISION = "collision"  # 通常の衝突(壁・天井など)
+KIND_SPIKE = "spike"          # トゲ(固定ダメージ)
 
 
 def impact_damage(kind, speed):

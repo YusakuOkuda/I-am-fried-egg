@@ -23,3 +23,33 @@ def slope_down_right(x, base_y, w, h):
     左端 (x, base_y-h) から、右下 (x+w, base_y) まで下がる。
     """
     return [(x, base_y - h), (x + w, base_y), (x, base_y)]
+
+
+def spikes(x, base_y, count, width=30, height=34):
+    """左端 x、足元の高さ base_y に、トゲ(三角形)を count 個、横に並べる。三角形のリストを返す。"""
+    return [
+        [(x + i * width, base_y),
+         (x + i * width + width / 2, base_y - height),
+         (x + (i + 1) * width, base_y)]
+        for i in range(count)
+    ]
+
+
+def moving_platform(x, y, w, h, direction, distance, speed, pingpong=True, phase=0.0):
+    """動く足場の設定を作る。
+
+    (x, y, w, h): 開始位置での左上と大きさ
+    direction   : 動く向き (1, 0)=右 / (-1, 0)=左 / (0, 1)=下 / (0, -1)=上
+    distance    : 動く距離(px)
+    speed       : 速さ(px/秒)
+    pingpong    : True なら往復、False なら端まで行って止まる
+    phase       : 動き始めを何秒ずらすか
+    """
+    return {
+        "rect": (x, y, w, h),
+        "direction": direction,
+        "distance": distance,
+        "speed": speed,
+        "pingpong": pingpong,
+        "phase": phase,
+    }

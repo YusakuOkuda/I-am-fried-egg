@@ -27,6 +27,10 @@ COLOR_CHECKPOINT_POLE = (130, 130, 145)
 COLOR_FLAG_INACTIVE = (185, 185, 195)   # 未通過の旗
 COLOR_FLAG_ACTIVE = (90, 200, 120)      # 通過済みの旗
 COLOR_POPUP = (210, 110, 20)            # 取得表示の文字色
+COLOR_MOVING_PLATFORM = (170, 196, 230)       # 動く足場(固定足場と見分けるため青系)
+COLOR_MOVING_PLATFORM_EDGE = (95, 120, 165)
+COLOR_SPIKE = (225, 70, 70)                   # トゲ(危険物は赤系)
+COLOR_SPIKE_EDGE = (150, 30, 30)
 
 # ---------- 背景 ----------
 GRID_SIZE = 160                     # 背景の格子の間隔(px)
@@ -42,6 +46,7 @@ COLLISION_EGG = 1
 COLLISION_PLATFORM = 2
 COLLISION_TOAST = 3
 COLLISION_CHECKPOINT = 4
+COLLISION_SPIKE = 5
 
 # ---------- 卵の形 ----------
 EGG_WIDTH = 46
@@ -88,6 +93,10 @@ COLLISION_DAMAGE_PER_SPEED = 0.12
 IMPACT_INVINCIBLE_TIME = 0.3         # 衝撃ダメージを受けた直後の無敵時間(秒)
 DAMAGE_FLASH_TIME = 0.6              # ダメージ後に赤く点滅する時間(秒)
 DAMAGE_FLASH_INTERVAL = 0.08         # 点滅の切り替え間隔(秒)
+
+# ---------- トゲ ----------
+SPIKE_DAMAGE = 30                    # トゲに触れたときの固定ダメージ
+SPIKE_INVINCIBLE_TIME = 0.8          # トゲのダメージ後の無敵時間(秒)。触れ続けるとこの間隔で再びダメージ
 
 # ---------- トースト ----------
 TOAST_HEAL = 10                      # 取得時の耐久度の回復量

@@ -20,13 +20,14 @@ def draw_debug(surface, font, egg, steps_this_frame, fps, camera, game_state, st
         f"vel: ({body.velocity.x:.1f}, {body.velocity.y:.1f})",
         f"angle: {math.degrees(body.angle):.1f} deg   angvel: {body.angular_velocity:.2f}",
         f"grounded: {egg.grounded}   since_grounded: {min(egg.time_since_grounded, 9.99):.2f}s",
-        f"ground normal: ({egg.ground_normal[0]:.2f}, {egg.ground_normal[1]:.2f})",
+        f"ground normal: ({egg.ground_normal[0]:.2f}, {egg.ground_normal[1]:.2f})"
+        f"   ground vel: ({egg.ground_velocity[0]:.0f}, {egg.ground_velocity[1]:.0f})",
         f"camera: ({camera.x:.1f}, {camera.y:.1f})",
         f"hp: {durability.hp}/{durability.max_hp}   invincible: {durability.invincible_timer:.2f}s",
         f"last damage: {durability.last_event}",
         f"checkpoint: {'ACTIVE' if stage.checkpoint and stage.checkpoint.active else 'inactive'}"
         f"   saved: {_saved_text(stage)}",
-        f"toasts: {stage.toast_count}/{stage.toast_total}",
+        f"toasts: {stage.toast_count}/{stage.toast_total}   platform time: {stage.time:.1f}s",
         "dev keys: R full reset / K hp=0 / G fall-limit test",
     ]
     y = 40
@@ -39,4 +40,4 @@ def _saved_text(stage):
     state = stage.checkpoint_state
     if state is None:
         return "-"
-    return f"pos=({state['x']:.0f}, {state['y']:.0f}) hp={state['hp']} toasts={sorted(state['toasts'])}"
+    return f"pos=({state['x']:.0f}, {state['y']:.0f}) hp={state['hp']} toasts={sorted(state['toasts'])} t={state['time']:.1f}"

@@ -1,4 +1,4 @@
-"""ゲームの起動点。段階6:チェックポイント・トースト。
+"""ゲームの起動点。段階7:動く足場・トゲ。
 
 操作:
   A / ←  : 左へ移動
@@ -10,7 +10,13 @@
   G      : 卵を落下限界の下へ移す(開発用。落下ゲームオーバーの確認)
   Esc    : 終了
 ゲームオーバー画面では ↑/↓ で選び、Enter で決定する。
+
+起動方法:
+  python main.py     : ステージ1
+  python main.py 0   : 開発用テストステージ(動く足場・トゲの確認用)
 """
+
+import sys
 
 import pygame
 
@@ -62,10 +68,12 @@ def main():
     fonts = ui.load_fonts()
 
     space = physics.create_space()
-    stage = Stage(space, 1)
+    stage_number = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    stage = Stage(space, stage_number)
     egg = Egg(space, *stage.egg_start)
     physics.register_egg_collisions(space, egg.add_impact)
     physics.register_item_collisions(space, stage.on_toast_touched, stage.on_checkpoint_touched)
+    physics.register_spike_collisions(space, egg.add_spike_touch)
     camera = Camera(stage.width, stage.height)
     camera.snap_to(*stage.egg_start)
 
@@ -147,6 +155,7 @@ def main():
             while accumulator >= config.PHYSICS_DT and steps < config.MAX_STEPS_PER_FRAME:
                 egg.apply_controls(move_dir, jump_requested, config.PHYSICS_DT)
                 jump_requested = False  # ジャンプ要求は最初の1ステップだけ有効
+                stage.prepare_physics_step(config.PHYSICS_DT)   # 動く足場の速度を設定
                 space.step(config.PHYSICS_DT)
                 physics.limit_speed(egg.body, config.MAX_SPEED)
                 egg.update_ground_state(config.PHYSICS_DT)
