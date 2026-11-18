@@ -12,6 +12,8 @@
 セーブ(クリア状況)は save_manager.py が担当する。
 """
 
+import logging
+
 import pygame
 
 import config
@@ -22,6 +24,8 @@ from debug import draw_debug
 from player import Egg
 from save_manager import SaveManager
 from stage import Stage
+
+logger = logging.getLogger("lost_egg")
 
 STATE_TITLE = "TITLE"
 STATE_STAGE_SELECT = "STAGE_SELECT"
@@ -75,7 +79,10 @@ class Game:
         physics.register_spike_collisions(self.space, self.egg.add_spike_touch)
         self.camera = Camera(self.stage.width, self.stage.height)
         self.camera.snap_to(*self.stage.egg_start)
+        logger.info("ステージ開始: ステージ%d(トースト%d個)", number, self.stage.toast_total)
 
+        self._logged_toast_count = 0          # ログ出力用: すでに記録したトースト取得数
+        self._logged_checkpoint = False       # ログ出力用: チェックポイント有効化を記録したか
         self.state = STATE_PLAYING
         self.menu_items = []
         self.menu_index = 0
@@ -90,7 +97,8 @@ class Game:
     def respawn(self, from_checkpoint):
         """卵を復活させる。チェックポイント通過済みなら保存した状態へ、そうでなければステージの最初から。"""
         stage, egg = self.stage, self.egg
-        if from_checkpoint and stage.checkpoint_state is not None:
+        used_checkpoint = from_checkpoint and stage.checkpoint_state is not None
+        if used_checkpoint:
             state = stage.restore_checkpoint()
             egg.reset(state["x"], state["y"], state["hp"])
             self.camera.snap_to(state["x"], state["y"])   # 復活時はカメラも即座に移動
@@ -98,8 +106,27 @@ class Game:
             stage.reset_progress()
             egg.reset(*stage.egg_start)
             self.camera.snap_to(*stage.egg_start)
+        logger.info("%s: 位置=(%.0f, %.0f) 耐久度=%d トースト=%d/%d",
+                    "チェックポイントから再開" if used_checkpoint else "ステージを最初からやり直し",
+                    egg.body.position.x, egg.body.position.y, egg.durability.hp,
+                    stage.toast_count, stage.toast_total)
+        self._sync_progress_log()
         self.accumulator = 0.0
         self.jump_requested = False
+
+    def _sync_progress_log(self):
+        """トースト取得とチェックポイント有効化を、変化した瞬間だけログに記録する。"""
+        stage, egg = self.stage, self.egg
+        count = stage.toast_count
+        if count > self._logged_toast_count:
+            logger.info("トースト取得: ステージ%d %d/%d 耐久度=%d",
+                        stage.number, count, stage.toast_total, egg.durability.hp)
+        self._logged_toast_count = count
+        active = stage.checkpoint is not None and stage.checkpoint.active
+        if active and not self._logged_checkpoint:
+            logger.info("チェックポイント有効化: ステージ%d 位置=(%.0f, %.0f) 耐久度=%d",
+                        stage.number, egg.body.position.x, egg.body.position.y, egg.durability.hp)
+        self._logged_checkpoint = active
 
     def open_menu(self, state, items, message=""):
         self.state = state
@@ -111,6 +138,7 @@ class Game:
 
     def go_to_title(self, index=0):
         """タイトル画面へ戻る。プレイ中のステージ(物理空間・卵など)は破棄する。"""
+        logger.info("タイトル画面へ移動")
         self.space = self.stage = self.egg = self.camera = None
         self.state = STATE_TITLE
         self.menu_items = TITLE_ITEMS
@@ -264,6 +292,7 @@ class Game:
                 break
         if self.steps == config.MAX_STEPS_PER_FRAME:
             self.accumulator = 0.0                # 追いつけない分は捨てる
+        self._sync_progress_log()
 
         if self.reset_requested:
             self.reset_requested = False
@@ -274,6 +303,9 @@ class Game:
             return
         message = self.game_over_message()
         if message:
+            logger.info("ゲームオーバー: %s ステージ%d 位置=(%.0f, %.0f) 耐久度=%d",
+                        message, stage.number, egg.body.position.x, egg.body.position.y,
+                        egg.durability.hp)
             self.open_menu(STATE_GAME_OVER, GAME_OVER_ITEMS, message)
             return
 
@@ -296,6 +328,8 @@ class Game:
 
     def begin_stage_clear(self):
         self.clear_records[self.stage.number] = self.stage.toast_count   # 取得数を記録(保存はしない)
+        logger.info("ステージクリア: ステージ%d トースト=%d/%d 耐久度=%d", self.stage.number,
+                    self.stage.toast_count, self.stage.toast_total, self.egg.durability.hp)
         self.save.mark_cleared(self.stage.number)    # クリア状況を保存(解放状況はここから決まる)
         self.state = STATE_STAGE_CLEAR
         self.clear_timer = config.STAGE_CLEAR_WAIT

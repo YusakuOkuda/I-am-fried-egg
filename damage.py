@@ -4,9 +4,12 @@
 衝撃ダメージは「触れ始めた瞬間」の速さだけで決める。
 """
 
+import logging
 import math
 
 import config
+
+logger = logging.getLogger("lost_egg")
 
 KIND_LANDING = "landing"      # 着地(床と判定される面に当たった)
 KIND_COLLISION = "collision"  # 通常の衝突(壁・天井など)
@@ -75,9 +78,11 @@ class Durability:
             return False
         if self.is_invincible:
             self.last_event = f"{kind} speed={speed:.0f} dmg={amount} BLOCKED (invincible)"
+            logger.debug("ダメージ無効(無敵中): 種類=%s 速度=%.0f ダメージ=%d", kind, speed, amount)
             return False
         self.hp = max(0, self.hp - amount)
         self.invincible_timer = invincible_time
         self.flash_timer = config.DAMAGE_FLASH_TIME
         self.last_event = f"{kind} speed={speed:.0f} dmg={amount} -> hp={self.hp}"
+        logger.info("ダメージ: 種類=%s 速度=%.0f ダメージ=%d 耐久度=%d", kind, speed, amount, self.hp)
         return True

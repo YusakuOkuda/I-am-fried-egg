@@ -15,14 +15,28 @@
   python main.py 2   : ステージ2から(開発用。タイトルを飛ばす。0 はテストステージ)
 """
 
+import logging
 import sys
 
+import pygame
+import pymunk
+
+from debug import setup_logging
 from game_manager import Game
 
 
 def main():
-    start_stage = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    Game(start_stage).run()
+    log_path = setup_logging()
+    logger = logging.getLogger("lost_egg")
+    logger.info("ゲーム起動: Python %s / pygame %s / pymunk %s",
+                sys.version.split()[0], pygame.version.ver, pymunk.version)
+    logger.info("ログファイル: %s", log_path)
+    try:
+        start_stage = int(sys.argv[1]) if len(sys.argv) > 1 else None
+        Game(start_stage).run()
+    finally:
+        # 想定外のエラーは debug.py の仕組みで、エラーの詳細がログに記録される
+        logger.info("ゲーム終了")
 
 
 if __name__ == "__main__":
