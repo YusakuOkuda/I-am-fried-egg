@@ -1,2 +1,7 @@
-pygame==2.6.1
-pymunk==7.3.1
+# LOST EGG 2D の開発環境を再構築するためのライブラリ一覧
+# インストール:  pip install -r requirements.txt
+# (動作確認済みの Python は 3.12 系)
+
+pygame==2.6.1        # 画面描画・キー入力
+pymunk==7.3.1        # 物理演算(卵の転がり・衝突・動く足場)
+pyinstaller==6.16.0  # Windows の exe ファイルを作るためのツール(ゲームの実行には不要)
