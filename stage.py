@@ -1,5 +1,7 @@
 """ステージデータの読み込み、物理空間への登録、描画、トースト・チェックポイント・ゴールの管理を担当するファイル。"""
 
+import math
+
 import pygame
 
 import config
@@ -7,6 +9,23 @@ import physics
 from moving_platform import MovingPlatform
 from stages import stage1, stage2, stage3, test_stage
 from stages.helpers import rect
+
+
+_BACKGROUND_CACHE = None
+
+
+def _make_sky_background():
+    """朝空のグラデーションを一度だけ作り、毎フレーム再利用する。"""
+    global _BACKGROUND_CACHE
+    if _BACKGROUND_CACHE is None:
+        _BACKGROUND_CACHE = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        top = (166, 215, 239)
+        bottom = (255, 239, 205)
+        for y in range(config.WINDOW_HEIGHT):
+            t = y / max(1, config.WINDOW_HEIGHT - 1)
+            color = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom))
+            pygame.draw.line(_BACKGROUND_CACHE, color, (0, y), (config.WINDOW_WIDTH, y))
+    return _BACKGROUND_CACHE
 
 # ステージ番号とデータの対応
 # 0 は開発用のテストステージ(動く足場・トゲの確認用)。python main.py 0 で起動する
@@ -95,6 +114,7 @@ class Stage:
 
         self.checkpoint_state = None   # チェックポイントで保存した状態(メモリ上のみ)
         self.popups = []               # トースト取得表示
+        self.pickup_effects = []       # トースト取得時のリングと光
         self._touched_toasts = []      # 物理ステップ中に触れたものを集めておく
         self._touched_checkpoint = False
         self._touched_goal = False
@@ -143,6 +163,7 @@ class Stage:
                 "text": f"トースト +{healed}", "x": toast.x, "y": toast.y,
                 "timer": config.TOAST_POPUP_TIME,
             })
+            self.pickup_effects.append({"x": toast.x, "y": toast.y, "timer": 0.7})
 
         touched_checkpoint, self._touched_checkpoint = self._touched_checkpoint, False
         if (touched_checkpoint and self.checkpoint is not None
@@ -159,6 +180,9 @@ class Stage:
         for popup in self.popups:
             popup["timer"] -= dt
         self.popups = [p for p in self.popups if p["timer"] > 0.0]
+        for effect in self.pickup_effects:
+            effect["timer"] -= dt
+        self.pickup_effects = [e for e in self.pickup_effects if e["timer"] > 0.0]
 
     # ---------- チェックポイントの保存・復元 ----------
     def _save_checkpoint(self, egg):
@@ -198,6 +222,7 @@ class Stage:
 
     def _clear_transient(self):
         self.popups.clear()
+        self.pickup_effects.clear()
         self._touched_toasts.clear()
         self._touched_checkpoint = False
         self._touched_goal = False
@@ -205,21 +230,26 @@ class Stage:
 
     # ---------- 描画 ----------
     def draw_background(self, surface, camera):
-        """背景色と格子線。カメラに合わせて動くので、スクロールの確認になる。"""
-        surface.fill(config.COLOR_BACKGROUND)
-        size = config.GRID_SIZE
-        start_x = -(int(camera.x) % size)
-        start_y = -(int(camera.y) % size)
-        for x in range(start_x, config.WINDOW_WIDTH, size):
-            pygame.draw.line(surface, config.COLOR_GRID, (x, 0), (x, config.WINDOW_HEIGHT), 2)
-        for y in range(start_y, config.WINDOW_HEIGHT, size):
-            pygame.draw.line(surface, config.COLOR_GRID, (0, y), (config.WINDOW_WIDTH, y), 2)
+        """朝空とゆっくり流れる雲で、プレイ画面に奥行きを加える。"""
+        surface.blit(_make_sky_background(), (0, 0))
+        period = 520
+        offset = int(camera.x * 0.12) % period
+        for base_x in range(-period - offset, config.WINDOW_WIDTH + period, period):
+            x = base_x
+            y = 148 + ((base_x // period) % 3) * 112 - int(camera.y * 0.035) % 80
+            cloud = (255, 255, 255)
+            pygame.draw.ellipse(surface, cloud, (x + 30, y + 18, 96, 30))
+            pygame.draw.ellipse(surface, cloud, (x + 46, y, 48, 50))
+            pygame.draw.ellipse(surface, cloud, (x + 75, y + 7, 58, 42))
+            pygame.draw.ellipse(surface, (255, 250, 238), (x + 49, y + 35, 63, 5))
 
     def draw(self, surface, camera):
         for shape in self.shapes:
             points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
+            shadow = [(x + 2, y + 7) for x, y in points]
+            pygame.draw.polygon(surface, (139, 157, 159), shadow)
             pygame.draw.polygon(surface, config.COLOR_PLATFORM, points)
-            pygame.draw.polygon(surface, config.COLOR_PLATFORM_EDGE, points, 3)
+            pygame.draw.polygon(surface, (104, 133, 119), points, 3)
         for platform in self.moving_platforms:
             platform.draw(surface, camera)
         for shape in self.spike_shapes:
@@ -281,3 +311,19 @@ class Stage:
             x, y = camera.apply((popup["x"], popup["y"] - config.TOAST_POPUP_RISE * progress - 30))
             text = font.render(popup["text"], True, config.COLOR_POPUP)
             surface.blit(text, text.get_rect(center=(x, y)))
+
+    def draw_pickup_effects(self, surface, camera):
+        """トースト取得時に、広がるリングと小さな光を描く。"""
+        for effect in self.pickup_effects:
+            progress = 1.0 - effect["timer"] / 0.7
+            cx, cy = camera.apply((effect["x"], effect["y"]))
+            radius = int(12 + progress * 34)
+            color = (255, int(224 - progress * 82), int(125 - progress * 30))
+            pygame.draw.circle(surface, color, (int(cx), int(cy)), radius, 3)
+            for i in range(10):
+                angle = math.tau * i / 10 - math.pi / 2
+                distance = 10 + progress * 42
+                px = int(cx + math.cos(angle) * distance)
+                py = int(cy + math.sin(angle) * distance)
+                dot_radius = max(1, int(4 * (1 - progress)))
+                pygame.draw.circle(surface, (255, 249, 218), (px, py), dot_radius)

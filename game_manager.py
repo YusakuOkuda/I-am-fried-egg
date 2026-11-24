@@ -13,6 +13,7 @@
 """
 
 import logging
+import math
 
 import pygame
 
@@ -61,6 +62,11 @@ class Game:
         self.clear_records = {}          # ステージ番号 → クリア時のトースト取得数(メモリ上のみ。保存しない)
         self.space = self.stage = self.egg = self.camera = None
         self.steps = 0
+        self.shake_timer = 0.0
+        self.shake_duration = 0.0
+        self.shake_intensity = 0.0
+        self.shake_phase = 0.0
+        self.clear_elapsed = 0.0
         if start_stage is None:
             self.go_to_title()
         else:
@@ -256,13 +262,35 @@ class Game:
 
     # ---------- 更新 ----------
     def update(self, frame_time):
+        if self.state != STATE_PAUSED:
+            self._update_screen_shake(frame_time)
         if self.state == STATE_PLAYING:
             self.update_playing(frame_time)
         elif self.state == STATE_STAGE_CLEAR:
+            self.stage.update(frame_time)
+            self.clear_elapsed += frame_time
             self.clear_timer -= frame_time
             if self.clear_timer <= 0.0:
                 self.after_stage_clear()
         # PAUSED / GAME_OVER / GAME_CLEAR では何も進めない(物理・足場・カメラ・演出がすべて止まる)
+
+    def _trigger_screen_shake(self, damage_amount):
+        self.shake_duration = 0.32
+        self.shake_timer = self.shake_duration
+        self.shake_intensity = min(16.0, 7.0 + damage_amount * 0.18)
+        self.shake_phase = 0.0
+
+    def _update_screen_shake(self, dt):
+        self.shake_timer = max(0.0, self.shake_timer - dt)
+        if self.camera is None:
+            return
+        if self.shake_timer <= 0.0:
+            self.camera.shake_x = self.camera.shake_y = 0.0
+            return
+        self.shake_phase += dt * math.tau * 28
+        amount = self.shake_intensity * self.shake_timer / self.shake_duration
+        self.camera.shake_x = math.sin(self.shake_phase) * amount
+        self.camera.shake_y = math.cos(self.shake_phase * 0.83) * amount * 0.7
 
     def update_playing(self, frame_time):
         egg, stage = self.egg, self.stage
@@ -283,7 +311,10 @@ class Game:
             self.space.step(config.PHYSICS_DT)
             physics.limit_speed(egg.body, config.MAX_SPEED)
             egg.update_ground_state(config.PHYSICS_DT)
+            hp_before = egg.durability.hp
             egg.update_damage(config.PHYSICS_DT)
+            if egg.durability.hp < hp_before:
+                self._trigger_screen_shake(hp_before - egg.durability.hp)
             stage.process_items(egg)
             stage.update(config.PHYSICS_DT)
             self.accumulator -= config.PHYSICS_DT
@@ -333,6 +364,7 @@ class Game:
         self.save.mark_cleared(self.stage.number)    # クリア状況を保存(解放状況はここから決まる)
         self.state = STATE_STAGE_CLEAR
         self.clear_timer = config.STAGE_CLEAR_WAIT
+        self.clear_elapsed = 0.0
         self.jump_requested = False
 
     def after_stage_clear(self):
@@ -360,7 +392,16 @@ class Game:
 
         stage.draw_background(screen, camera)
         stage.draw(screen, camera)
-        egg.draw(screen, camera)
+        fried_ratio = 1.0 if self.state == STATE_GAME_CLEAR else 0.0
+        if self.state == STATE_STAGE_CLEAR:
+            progress = min(1.0, self.clear_elapsed / 1.15)
+            fried_ratio = progress * progress * (3.0 - 2.0 * progress)
+        fried_position = None
+        if fried_ratio > 0.0 and stage.goal is not None:
+            # Pan center is inside its bowl (base_y - 24); this is visual only.
+            fried_position = (stage.goal.x, stage.goal.base_y - 24)
+        egg.draw(screen, camera, fried_ratio, fried_position)
+        stage.draw_pickup_effects(screen, camera)
         stage.draw_popups(screen, camera, fonts["ui"])
         self.draw_hud()
 

@@ -187,8 +187,50 @@ class Egg:
         """カメラを反映した、画面上の頂点リスト。"""
         return [camera.apply(p) for p in self.world_vertices()]
 
-    def draw(self, surface, camera):
+    def draw(self, surface, camera, fried_ratio=0.0, fried_position=None):
+        """卵を描き、ゴール演出中はだんだん目玉焼きへ変える。"""
+        ratio = max(0.0, min(1.0, fried_ratio))
+        if ratio <= 0.0:
+            self._draw_egg(surface, camera)
+            return
+
+        egg_layer = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        self._draw_egg(egg_layer, camera)
+        egg_layer.set_alpha(round(255 * (1.0 - ratio)))
+        surface.blit(egg_layer, (0, 0))
+
+        transform_position = fried_position or self.body.position
+        cx, cy = camera.apply(transform_position)
+        ease = ratio * ratio * (3.0 - 2.0 * ratio)
+        width, height = round(42 + 18 * ease), round(24 + 14 * ease)
+        white = pygame.Rect(0, 0, width, height)
+        white.center = (round(cx), round(cy + 8 * ease))
+        pygame.draw.ellipse(surface, (255, 250, 226), white)
+        pygame.draw.ellipse(surface, (210, 162, 91), white, 2)
+        yolk_radius = round(1 + 13 * ease)
+        yolk_center = (white.centerx, white.centery - 1)
+        pygame.draw.circle(surface, (241, 163, 47), yolk_center, yolk_radius + 2)
+        pygame.draw.circle(surface, (255, 202, 76), yolk_center, yolk_radius)
+        if yolk_radius > 5:
+            pygame.draw.circle(surface, (255, 224, 127),
+                               (yolk_center[0] - yolk_radius // 3,
+                                yolk_center[1] - yolk_radius // 3), max(2, yolk_radius // 4))
+
+    def _draw_egg(self, surface, camera):
         points = self.screen_vertices(camera)
+        left = int(min(point[0] for point in points))
+        right = int(max(point[0] for point in points))
+        top = int(min(point[1] for point in points))
+        bottom = int(max(point[1] for point in points))
+        center_x = (left + right) // 2
+        # Contact shadow makes the egg feel grounded without changing physics.
+        pygame.draw.ellipse(surface, (145, 155, 151),
+                            (center_x - 17, bottom - 5, 34, 10))
         color = config.COLOR_EGG_DAMAGE if self.durability.flash_on else config.COLOR_EGG
         pygame.draw.polygon(surface, color, points)
-        pygame.draw.polygon(surface, config.COLOR_EGG_EDGE, points, 2)
+        pygame.draw.polygon(surface, (185, 157, 119), points, 2)
+        if not self.durability.flash_on:
+            pygame.draw.ellipse(surface, (255, 255, 255),
+                                (left + 11, top + 13, 8, 17))
+            pygame.draw.ellipse(surface, (255, 255, 255),
+                                (left + 21, top + 24, 4, 7))

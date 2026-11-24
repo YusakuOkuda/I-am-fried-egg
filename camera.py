@@ -15,6 +15,8 @@ class Camera:
         self.stage_height = stage_height
         self.x = 0.0
         self.y = 0.0
+        self.shake_x = 0.0
+        self.shake_y = 0.0
 
     def _clamp(self):
         """ステージの外が映らないように位置を制限する。"""
@@ -57,4 +59,4 @@ class Camera:
 
     def apply(self, point):
         """ワールド座標 (x, y) を画面座標に変換する。"""
-        return (point[0] - self.x, point[1] - self.y)
+        return (point[0] - self.x + self.shake_x, point[1] - self.y + self.shake_y)
