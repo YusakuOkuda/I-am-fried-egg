@@ -58,6 +58,8 @@ class Egg:
         # 耐久度と、物理ステップ中に集めた衝撃(ステップ後にまとめて処理する)
         self.durability = damage.Durability()
         self.damage_multiplier = 1.0
+        self.jump_multiplier = 1.0
+        self.air_control_multiplier = 1.0
         self.pending_impacts = []
         self.touching_spike = False
         self.spring_touched = False
@@ -87,13 +89,14 @@ class Egg:
         # --- ジャンプ(固定高さ:上向き速度を一定値にする) ---
         can_jump = self.time_since_grounded <= config.COYOTE_TIME and self.jump_lockout <= 0.0
         if jump_pressed and can_jump:
-            body.velocity = (body.velocity.x, -config.JUMP_SPEED)
+            body.velocity = (body.velocity.x, -config.JUMP_SPEED * self.jump_multiplier)
             self.jump_lockout = config.JUMP_LOCKOUT
             self.time_since_grounded = 999.0  # 猶予を使い切る(二段ジャンプ防止)
             self.grounded = False
 
         # --- 左右移動 ---
-        ratio = 1.0 if self.grounded else config.AIR_CONTROL_RATIO
+        ratio = (1.0 if self.grounded else
+                 config.AIR_CONTROL_RATIO * self.air_control_multiplier)
         if move_dir != 0:
             # 横方向の力(最高速度に達していたら加えない)。
             # 足場に乗っているときは、足場から見た速度で判定する。

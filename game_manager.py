@@ -37,7 +37,12 @@ STATE_STAGE_CLEAR = "STAGE_CLEAR"
 STATE_GAME_CLEAR = "GAME_CLEAR"
 
 # メニューの項目 (動作の名前, 表示する文字)
-DIFFICULTIES = (("やさしい", 0.65), ("ふつう", 1.0), ("むずかしい", 1.4))
+DIFFICULTIES = (
+    # 名前, 被ダメージ倍率, ジャンプ倍率, 空中操作倍率, 開始耐久度
+    ("やさしい", 0.5, 1.15, 1.25, 100),
+    ("ふつう", 1.0, 1.0, 1.0, 100),
+    ("むずかしい", 1.5, 0.9, 0.8, 75),
+)
 PAUSE_ITEMS = [("resume", "再開"), ("title", "タイトルへ戻る")]
 GAME_OVER_ITEMS = [("checkpoint", "チェックポイントから再開"), ("title", "タイトルへ戻る")]
 GAME_CLEAR_ITEMS = [("title", "タイトルへ戻る"), ("again", "もう一度プレイ")]
@@ -79,7 +84,11 @@ class Game:
         self.space = physics.create_space()
         self.stage = Stage(self.space, number)
         self.egg = Egg(self.space, *self.stage.egg_start)
-        self.egg.damage_multiplier = DIFFICULTIES[self.difficulty_index][1]
+        _, damage_scale, jump_scale, air_scale, start_hp = DIFFICULTIES[self.difficulty_index]
+        self.egg.damage_multiplier = damage_scale
+        self.egg.jump_multiplier = jump_scale
+        self.egg.air_control_multiplier = air_scale
+        self.egg.durability.hp = start_hp
         physics.register_egg_collisions(self.space, self.egg.add_impact)
         physics.register_item_collisions(
             self.space, self.stage.on_toast_touched,
