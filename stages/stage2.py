@@ -17,6 +17,7 @@ STAGE = {
     "height": 1200,
     "egg_start": (140, 1000),
     "fall_limit": 1500,
+    "sky_colors": ((167, 206, 231), (218, 235, 218)),
     "checkpoint": (2520, 800),          # 高い足場の上(ほぼ中間)
     "goal": (3700, 1080),
     "toasts": [

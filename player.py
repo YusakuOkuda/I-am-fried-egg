@@ -57,8 +57,10 @@ class Egg:
 
         # 耐久度と、物理ステップ中に集めた衝撃(ステップ後にまとめて処理する)
         self.durability = damage.Durability()
+        self.damage_multiplier = 1.0
         self.pending_impacts = []
         self.touching_spike = False
+        self.spring_touched = False
 
     # ---------- 状態リセット(開発用・ゲームオーバーからの再開用) ----------
     def reset(self, x, y, hp=None):
@@ -72,6 +74,7 @@ class Egg:
         self.jump_lockout = 0.0
         self.ground_velocity = (0.0, 0.0)
         self.touching_spike = False
+        self.spring_touched = False
         self.durability.reset(hp)
         self.pending_impacts.clear()
 
@@ -152,6 +155,18 @@ class Egg:
         """トゲとの接触コールバックから呼ばれる。記録だけして、処理は update_damage で行う。"""
         self.touching_spike = True
 
+    def add_spring_touch(self):
+        """バネ床の着地を物理ステップ後に処理するため記録する。"""
+        self.spring_touched = True
+
+    def update_spring(self):
+        if self.spring_touched:
+            self.spring_touched = False
+            self.body.velocity = (self.body.velocity.x, min(self.body.velocity.y, -820.0))
+            self.jump_lockout = config.JUMP_LOCKOUT
+            self.time_since_grounded = 999.0
+            self.grounded = False
+
     def update_damage(self, dt):
         """タイマーを進め、このステップのダメージを処理する。
 
@@ -164,8 +179,9 @@ class Egg:
         if self.touching_spike:
             self.touching_spike = False
             if not self.durability.is_invincible:
+                spike_damage = max(1, round(config.SPIKE_DAMAGE * self.damage_multiplier))
                 self.durability.take_damage(
-                    damage.KIND_SPIKE, 0.0, config.SPIKE_DAMAGE, config.SPIKE_INVINCIBLE_TIME)
+                    damage.KIND_SPIKE, 0.0, spike_damage, config.SPIKE_INVINCIBLE_TIME)
                 self.pending_impacts.clear()   # トゲと同時の衝撃は数えない
                 return
 
@@ -176,6 +192,8 @@ class Egg:
 
         kind, speed = max(impacts, key=lambda item: damage.impact_damage(item[0], item[1]))
         amount = damage.impact_damage(kind, speed)
+        if amount > 0:
+            amount = max(1, round(amount * self.damage_multiplier))
         self.durability.take_damage(kind, speed, amount, config.IMPACT_INVINCIBLE_TIME)
 
     # ---------- 描画 ----------

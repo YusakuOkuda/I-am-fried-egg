@@ -67,8 +67,10 @@ def add_spring_pads(space, pads):
 def register_spring_collisions(space, on_spring):
     """卵が上からバネ床へ着地したとき、反発を強めるイベントを記録する。"""
     def begin(arbiter, _space, _data):
-        egg_shape = arbiter.shapes[0]
-        if egg_shape.body.velocity.y > 0 and arbiter.normal.y > config.GROUND_NORMAL_MIN_Y:
+        egg_shape = next(shape for shape in arbiter.shapes
+                         if shape.collision_type == config.COLLISION_EGG)
+        normal = arbiter.normal if arbiter.shapes[0] is egg_shape else -arbiter.normal
+        if egg_shape.body.velocity.y > 0 and normal.y > config.GROUND_NORMAL_MIN_Y:
             on_spring()
 
     space.on_collision(config.COLLISION_EGG, config.COLLISION_SPRING, begin=begin)

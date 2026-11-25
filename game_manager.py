@@ -24,7 +24,7 @@ from camera import Camera
 from debug import draw_debug
 from player import Egg
 from save_manager import SaveManager
-from stage import Stage
+from stage import STAGE_DATA, Stage
 
 logger = logging.getLogger("lost_egg")
 
@@ -37,7 +37,7 @@ STATE_STAGE_CLEAR = "STAGE_CLEAR"
 STATE_GAME_CLEAR = "GAME_CLEAR"
 
 # メニューの項目 (動作の名前, 表示する文字)
-TITLE_ITEMS = [("start", "ゲーム開始"), ("select", "ステージ選択"), ("quit", "ゲーム終了")]
+DIFFICULTIES = (("やさしい", 0.65), ("ふつう", 1.0), ("むずかしい", 1.4))
 PAUSE_ITEMS = [("resume", "再開"), ("title", "タイトルへ戻る")]
 GAME_OVER_ITEMS = [("checkpoint", "チェックポイントから再開"), ("title", "タイトルへ戻る")]
 GAME_CLEAR_ITEMS = [("title", "タイトルへ戻る"), ("again", "もう一度プレイ")]
@@ -67,6 +67,7 @@ class Game:
         self.shake_intensity = 0.0
         self.shake_phase = 0.0
         self.clear_elapsed = 0.0
+        self.difficulty_index = 1
         if start_stage is None:
             self.go_to_title()
         else:
@@ -78,11 +79,13 @@ class Game:
         self.space = physics.create_space()
         self.stage = Stage(self.space, number)
         self.egg = Egg(self.space, *self.stage.egg_start)
+        self.egg.damage_multiplier = DIFFICULTIES[self.difficulty_index][1]
         physics.register_egg_collisions(self.space, self.egg.add_impact)
         physics.register_item_collisions(
             self.space, self.stage.on_toast_touched,
             self.stage.on_checkpoint_touched, self.stage.on_goal_touched)
         physics.register_spike_collisions(self.space, self.egg.add_spike_touch)
+        physics.register_spring_collisions(self.space, self.egg.add_spring_touch)
         self.camera = Camera(self.stage.width, self.stage.height)
         self.camera.snap_to(*self.stage.egg_start)
         logger.info("ステージ開始: ステージ%d(トースト%d個)", number, self.stage.toast_total)
@@ -147,13 +150,26 @@ class Game:
         logger.info("タイトル画面へ移動")
         self.space = self.stage = self.egg = self.camera = None
         self.state = STATE_TITLE
-        self.menu_items = TITLE_ITEMS
+        self.menu_items = self._title_menu_items()
         self.menu_index = index
         self.confirming = False
         self.message = ""
         self.accumulator = 0.0
         self.jump_requested = False
         self.steps = 0
+
+    def _title_menu_items(self):
+        name = DIFFICULTIES[self.difficulty_index][0]
+        return [
+            ("start", "ゲーム開始"),
+            ("select", "ステージ選択"),
+            ("difficulty", f"難易度: {name}  ◀ ▶"),
+            ("quit", "ゲーム終了"),
+        ]
+
+    def change_difficulty(self, step=1):
+        self.difficulty_index = (self.difficulty_index + step) % len(DIFFICULTIES)
+        self.menu_items = self._title_menu_items()
 
     def open_stage_select(self):
         """ステージ選択画面を開く。カーソルは「次に挑戦するステージ」に置く。"""
@@ -213,6 +229,9 @@ class Game:
                 self.egg.body.position = (self.egg.body.position.x, self.stage.fall_limit + 50)
         elif self.state == STATE_STAGE_SELECT:
             self.handle_stage_select_key(key)
+        elif self.state == STATE_TITLE and key in (pygame.K_LEFT, pygame.K_RIGHT):
+            if self.menu_items[self.menu_index][0] == "difficulty":
+                self.change_difficulty(-1 if key == pygame.K_LEFT else 1)
         elif self.state in (STATE_TITLE, STATE_PAUSED, STATE_GAME_OVER, STATE_GAME_CLEAR):
             self.handle_menu_key(key)
         # STATE_STAGE_CLEAR 中はキー入力を受け付けない
@@ -240,6 +259,8 @@ class Game:
             self.load_stage(self.save.next_start_stage())    # 最も進んだ未クリアステージから
         elif action == "select":
             self.open_stage_select()
+        elif action == "difficulty":
+            self.change_difficulty()
         elif action == "quit":
             self.running = False
         elif action == "resume":
@@ -309,6 +330,7 @@ class Game:
             self.jump_requested = False           # ジャンプ要求は最初の1ステップだけ有効
             stage.prepare_physics_step(config.PHYSICS_DT)   # 動く足場の速度を設定
             self.space.step(config.PHYSICS_DT)
+            egg.update_spring()
             physics.limit_speed(egg.body, config.MAX_SPEED)
             egg.update_ground_state(config.PHYSICS_DT)
             hp_before = egg.durability.hp
@@ -382,7 +404,7 @@ class Game:
             pygame.display.flip()
             return
         if self.state == STATE_STAGE_SELECT:
-            entries = [(f"ステージ {n}", self.save.status(n))
+            entries = [(STAGE_DATA[n]["name"], self.save.status(n))
                        for n in range(1, config.LAST_STAGE + 1)]
             ui.draw_stage_select(screen, fonts, "ステージ選択", entries, self.menu_index,
                                  STAGE_SELECT_HINT)
@@ -425,7 +447,9 @@ class Game:
     def draw_hud(self):
         """プレイ画面の表示: ステージ番号、耐久度ゲージ、トースト数、操作ガイド。"""
         screen, fonts = self.screen, self.fonts
-        label = f"STAGE {self.stage.number}" if self.stage.number > 0 else "TEST STAGE"
+        difficulty = DIFFICULTIES[self.difficulty_index][0]
+        label = (f"STAGE {self.stage.number} / {difficulty}"
+                 if self.stage.number > 0 else "TEST STAGE")
         screen.blit(fonts["ui"].render(label, True, config.COLOR_TEXT),
                     (config.UI_MARGIN, config.UI_MARGIN))
         ui.draw_durability_gauge(screen, fonts["ui"], self.egg.durability.hp,

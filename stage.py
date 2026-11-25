@@ -7,25 +7,24 @@ import pygame
 import config
 import physics
 from moving_platform import MovingPlatform
-from stages import stage1, stage2, stage3, test_stage
+from stages import stage1, stage2, stage3, stage4, test_stage
 from stages.helpers import rect
 
 
-_BACKGROUND_CACHE = None
+_BACKGROUND_CACHE = {}
 
 
-def _make_sky_background():
+def _make_sky_background(top, bottom):
     """朝空のグラデーションを一度だけ作り、毎フレーム再利用する。"""
-    global _BACKGROUND_CACHE
-    if _BACKGROUND_CACHE is None:
-        _BACKGROUND_CACHE = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
-        top = (166, 215, 239)
-        bottom = (255, 239, 205)
+    key = (top, bottom)
+    if key not in _BACKGROUND_CACHE:
+        sky = pygame.Surface((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
         for y in range(config.WINDOW_HEIGHT):
             t = y / max(1, config.WINDOW_HEIGHT - 1)
             color = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom))
-            pygame.draw.line(_BACKGROUND_CACHE, color, (0, y), (config.WINDOW_WIDTH, y))
-    return _BACKGROUND_CACHE
+            pygame.draw.line(sky, color, (0, y), (config.WINDOW_WIDTH, y))
+        _BACKGROUND_CACHE[key] = sky
+    return _BACKGROUND_CACHE[key]
 
 # ステージ番号とデータの対応
 # 0 は開発用のテストステージ(動く足場・トゲの確認用)。python main.py 0 で起動する
@@ -34,6 +33,7 @@ STAGE_DATA = {
     1: stage1.STAGE,
     2: stage2.STAGE,
     3: stage3.STAGE,
+    4: stage4.STAGE,
 }
 
 
@@ -70,11 +70,13 @@ class Stage:
         self.height = data["height"]
         self.egg_start = data["egg_start"]
         self.fall_limit = data["fall_limit"]
+        self.sky_colors = data.get("sky_colors", ((166, 215, 239), (255, 239, 205)))
         self.shapes = physics.add_platforms(space, data["platforms"])
 
         # --- 動く足場・トゲ ---
         self.moving_platforms = [MovingPlatform(space, spec) for spec in data.get("moving_platforms", [])]
         self.spike_shapes = physics.add_spikes(space, data.get("spikes", []))
+        self.spring_shapes = physics.add_spring_pads(space, data.get("spring_pads", []))
         self.time = 0.0                # 動く足場の時計(秒)。物理ステップを進めたときだけ進む
 
         # --- トースト ---
@@ -231,7 +233,7 @@ class Stage:
     # ---------- 描画 ----------
     def draw_background(self, surface, camera):
         """朝空とゆっくり流れる雲で、プレイ画面に奥行きを加える。"""
-        surface.blit(_make_sky_background(), (0, 0))
+        surface.blit(_make_sky_background(*self.sky_colors), (0, 0))
         period = 520
         offset = int(camera.x * 0.12) % period
         for base_x in range(-period - offset, config.WINDOW_WIDTH + period, period):
@@ -252,6 +254,19 @@ class Stage:
             pygame.draw.polygon(surface, (104, 133, 119), points, 3)
         for platform in self.moving_platforms:
             platform.draw(surface, camera)
+        for shape in self.spring_shapes:
+            points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
+            left = round(min(p[0] for p in points))
+            top = round(min(p[1] for p in points))
+            right = round(max(p[0] for p in points))
+            bottom = round(max(p[1] for p in points))
+            pygame.draw.rect(surface, (196, 93, 104), (left, top + 6, right - left, bottom - top - 6), border_radius=5)
+            pygame.draw.rect(surface, (255, 177, 117), (left, top, right - left, 11), border_radius=6)
+            coil_points = []
+            for i in range(7):
+                coil_points.append((left + 12 + i * (right - left - 24) / 6,
+                                    top + 12 if i % 2 == 0 else bottom - 2))
+            pygame.draw.lines(surface, (255, 238, 186), False, coil_points, 3)
         for shape in self.spike_shapes:
             points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
             pygame.draw.polygon(surface, config.COLOR_SPIKE, points)

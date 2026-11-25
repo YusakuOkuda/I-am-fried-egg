@@ -157,6 +157,8 @@ def draw_title_screen(surface, fonts, title, items, selected):
     title_surf = fonts["title"].render(title, True, config.COLOR_TEXT)
     surface.blit(title_surf, title_surf.get_rect(center=(cx, 200)))
     _draw_items(surface, fonts, items, selected, cx, 380)
+    hint = fonts["small"].render("難易度の行で ← / → または Enter で変更", True, config.COLOR_TEXT)
+    surface.blit(hint, hint.get_rect(center=(cx, config.WINDOW_HEIGHT - 24)))
 
 
 def draw_stage_select(surface, fonts, title, entries, selected, hint):
