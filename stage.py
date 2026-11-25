@@ -347,22 +347,30 @@ class Stage:
         while self._climb_top_y > self.climb_best_y - 1500:
             base_y = self._climb_top_y
             direction = self._climb_rng.choice((-1, 1))
-            split_x = max(260, min(self.width - 260, self._climb_last_x + direction * 110))
-            merge_x = max(280, min(self.width - 280, split_x + self._climb_rng.randint(-100, 100)))
-            common_y = base_y - 100
-            split_y = base_y - 205
-            merge_y = base_y - self._climb_rng.randint(840, 880)
-            self._add_climb_platform(trapezoid(split_x - 105, common_y, 210, 30, 26))
-            self._add_climb_platform(rect(split_x - 88, split_y, 176, 24))
+            common_delta = 450
+            if not 190 <= self._climb_last_x + direction * common_delta <= self.width - 190:
+                direction *= -1
+            side_x = self._climb_last_x + direction * 150
+            common_x = self._climb_last_x + direction * common_delta
+            split_x = side_x
+            merge_x = split_x + direction * 230
+            common_y = base_y - 125
+            split_y = base_y - 250
+            merge_y = base_y - self._climb_rng.randint(920, 940)
+
+            # 横へ出る同じ高さの足場で、前の足場の真上を避けてから登り始める
+            self._add_climb_platform(rect(side_x - 80, base_y, 160, 24))
+            self._add_climb_platform(trapezoid(common_x - 90, common_y, 180, 30, 24))
+            self._add_climb_platform(rect(split_x - 68, split_y, 136, 24))
 
             # 堅実な外周ルート: 広い足場を小さめのジャンプでいくつもつなぐ
             safe_count = 4
             for i in range(safe_count):
                 t = (i + 1) / (safe_count + 1)
                 y = split_y + (merge_y - split_y) * t
-                width = self._climb_rng.randint(145, 205)
-                center_x = (split_x + direction * 185 * (1 - t)
-                            + (merge_x - split_x) * t + 22 * math.sin(i * 1.7))
+                width = self._climb_rng.randint(110, 130)
+                lane_offsets = (230, 0, -230, 0)
+                center_x = split_x + direction * lane_offsets[i]
                 x = max(90, min(self.width - width - 90, center_x - width / 2))
                 kind = ("fragile" if i == safe_count // 2
                         and self._climb_rng.random() < 0.55 else "normal")
@@ -384,10 +392,10 @@ class Stage:
 
             # 直線的に大きく跳び移る危険ルート。失敗すると分岐下へ戻る
             shortcut_x = max(85, min(self.width - 305, split_x - direction * 95))
-            shortcut_y = split_y - 170
+            shortcut_y = split_y - 130
             shortcut_platforms = []
             for offset, width in ((0, 112), (1, 104), (2, 96)):
-                yy = shortcut_y - offset * 155
+                yy = shortcut_y - offset * 145
                 xx = shortcut_x + direction * offset * 135
                 vertices = zigzag(xx, yy, width, 38, teeth=3)[-1]
                 self._add_climb_platform(
@@ -404,7 +412,7 @@ class Stage:
 
             # 分岐直後のばね床で、より高い近道へ挑戦できる
             spring_y = common_y - 22
-            spring_x = split_x - 52
+            spring_x = common_x - 52
             pads = physics.add_spring_pads(self.space, [spring_pad(spring_x, spring_y, 104, 22)])
             self.spring_shapes.extend(pads)
             self.climb_dynamic_springs.extend(pads)
