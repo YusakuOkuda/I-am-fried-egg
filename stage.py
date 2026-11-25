@@ -9,7 +9,7 @@ import config
 import physics
 from moving_platform import MovingPlatform
 from stages import stage1, stage2, stage3, stage4, stage5, test_stage
-from stages.helpers import rect
+from stages.helpers import rect, spring_pad
 
 
 _BACKGROUND_CACHE = {}
@@ -76,7 +76,11 @@ class Stage:
         self.endless_climb = data.get("endless_climb", False)
         self.climb_start_y = self.egg_start[1]
         self.climb_best_y = self.egg_start[1]
-        self._climb_seed = data.get("climb_seed", 0)
+        self._climb_seed = data.get("climb_seed")
+        if self.endless_climb and self._climb_seed is None:
+            self._climb_seed = random.SystemRandom().randrange(2 ** 32)
+        if self._climb_seed is None:
+            self._climb_seed = 0
         self._climb_rng = random.Random(self._climb_seed)
         self._climb_top_y = min((platform[0][1] for platform in data["platforms"]),
                                 default=self.egg_start[1])
@@ -89,6 +93,17 @@ class Stage:
         self.moving_platforms = [MovingPlatform(space, spec) for spec in data.get("moving_platforms", [])]
         self.spike_shapes = physics.add_spikes(space, data.get("spikes", []))
         self.spring_shapes = physics.add_spring_pads(space, data.get("spring_pads", []))
+        self.climb_dynamic_springs = []
+        self.climb_item_shapes = {}
+        self.climb_items = []
+        self.climb_effects = []
+        self.climb_popup = ""
+        self.climb_popup_timer = 0.0
+        self.climb_float_timer = 0.0
+        self.climb_item_touched = []
+        self.climb_fragile = {}
+        self.climb_moving_platforms = []
+        self._climb_fragile_touches = set()
         self.time = 0.0                # 動く足場の時計(秒)。物理ステップを進めたときだけ進む
 
         # --- トースト ---
@@ -157,15 +172,51 @@ class Stage:
         self._touched_goal = True
         self._touched_goal_player = egg
 
+    def on_fragile_touched(self, shape, _egg):
+        if shape in self.climb_fragile:
+            self._climb_fragile_touches.add(shape)
+
+    def on_climb_item_touched(self, shape, egg):
+        self.climb_item_touched.append((shape, egg))
+
     # ---------- 動く足場 ----------
     def prepare_physics_step(self, dt):
         """物理ステップの直前に呼ぶ。動く足場の速度を設定し、足場の時計を進める。"""
         for platform in self.moving_platforms:
             platform.prepare_step(self.time, dt)
+        for platform in self.climb_moving_platforms:
+            platform.prepare_step(self.time, dt)
         self.time += dt
+
+    def register_climb_collisions(self):
+        """崩れる足場との接触を遅延処理できるよう記録する。"""
+        def mark_fragile(arbiter, _space, _data):
+            fragile = next((shape for shape in arbiter.shapes
+                            if shape in self.climb_fragile), None)
+            if fragile is not None:
+                self._climb_fragile_touches.add(fragile)
+
+        def climb_pre_solve(arbiter, _space, _data):
+            mark_fragile(arbiter, _space, _data)
+            egg_shape = next(shape for shape in arbiter.shapes
+                             if shape.collision_type == config.COLLISION_EGG)
+            platform_shape = next(shape for shape in arbiter.shapes if shape is not egg_shape)
+            return not physics.rising_through_platform(egg_shape, platform_shape)
+
+        self.space.on_collision(config.COLLISION_EGG, config.COLLISION_PLATFORM,
+                                begin=mark_fragile, pre_solve=climb_pre_solve)
+        def item_begin(arbiter, _space, _data):
+            egg_shape = next(shape for shape in arbiter.shapes
+                             if shape.collision_type == config.COLLISION_EGG)
+            item_shape = next(shape for shape in arbiter.shapes if shape is not egg_shape)
+            self.on_climb_item_touched(item_shape, egg_shape.body.user_data)
+
+        self.space.on_collision(config.COLLISION_EGG, config.COLLISION_TOAST, begin=item_begin)
 
     def _snap_platforms(self):
         for platform in self.moving_platforms:
+            platform.snap_to_time(self.time)
+        for platform in self.climb_moving_platforms:
             platform.snap_to_time(self.time)
 
     def sync_time(self, stage_time):
@@ -179,7 +230,19 @@ class Stage:
         if not isinstance(eggs, (tuple, list)):
             eggs = [eggs]
         touched, self._touched_toasts = self._touched_toasts, []
+        for shape, egg in self.climb_item_touched:
+            item = self.climb_item_shapes.get(shape)
+            if item is not None and not item["collected"]:
+                item["collected"] = True
+                egg.float_glide_timer = max(egg.float_glide_timer, 4.0)
+                self.climb_float_timer = 4.0
+                self.climb_popup = "羽を獲得！ Eキーで4秒間浮遊"
+                self.climb_popup_timer = 1.8
+                self.climb_effects.append({"x": item["x"], "y": item["y"], "timer": 0.8})
+        self.climb_item_touched.clear()
         for shape, egg in touched:
+            if shape in self.climb_item_shapes:
+                continue
             toast = self._toast_by_shape.get(shape)
             if toast is None or toast.collected:
                 continue                      # 取得済みは再取得できない
@@ -218,34 +281,155 @@ class Stage:
                                     *(egg.body.position.y for egg in eggs))
             self._extend_climb_path()
             self._prune_climb_path()
+            self._update_climb_gimmicks(dt)
         for popup in self.popups:
             popup["timer"] -= dt
         self.popups = [p for p in self.popups if p["timer"] > 0.0]
         for effect in self.pickup_effects:
             effect["timer"] -= dt
         self.pickup_effects = [e for e in self.pickup_effects if e["timer"] > 0.0]
+        for effect in self.climb_effects:
+            effect["timer"] -= dt
+        self.climb_effects = [e for e in self.climb_effects if e["timer"] > 0.0]
+        self.climb_popup_timer = max(0.0, self.climb_popup_timer - dt)
+        if eggs:
+            self.climb_float_timer = max(egg.float_glide_timer for egg in eggs)
+    def _update_climb_gimmicks(self, dt):
+        for shape, timer in list(self.climb_fragile.items()):
+            if shape in self._climb_fragile_touches:
+                timer += dt
+                self.climb_fragile[shape] = timer
+            else:
+                timer = max(0.0, timer - dt * 2)
+                self.climb_fragile[shape] = timer
+            if timer >= 0.75 and shape in self.space.shapes:
+                self.space.remove(shape)
+                if shape in self.shapes:
+                    self.shapes.remove(shape)
+                self.climb_fragile.pop(shape, None)
+        self._climb_fragile_touches.clear()
+
+    def _add_climb_platform(self, vertices, kind="normal", moving=None):
+        shape = physics.add_platforms(self.space, [vertices])[0]
+        self.shapes.append(shape)
+        self._climb_dynamic_shapes.append(shape)
+        if kind == "fragile":
+            self.climb_fragile[shape] = 0.0
+        if moving:
+            # 移動足場の専用キネマティックボディへ置き換える
+            self.space.remove(shape)
+            self.shapes.remove(shape)
+            self._climb_dynamic_shapes.remove(shape)
+            from moving_platform import MovingPlatform
+            x, y = vertices[0]
+            w = max(point[0] for point in vertices) - min(point[0] for point in vertices)
+            h = max(point[1] for point in vertices) - min(point[1] for point in vertices)
+            platform = MovingPlatform(self.space, {
+                "rect": (x, y, w, h), "direction": moving[0], "distance": moving[1],
+                "speed": moving[2], "phase": moving[3],
+            })
+            self.climb_moving_platforms.append(platform)
+            return platform.shape
+        return shape
+
+    def _add_climb_item(self, x, y):
+        size = 34
+        shape = physics.add_sensor(
+            self.space, rect(x - size / 2, y - size / 2, size, size), config.COLLISION_TOAST)
+        item = {"x": x, "y": y, "shape": shape, "collected": False}
+        self.climb_items.append(item)
+        self.climb_item_shapes[shape] = item
+        self._climb_dynamic_shapes.append(shape)
 
     def _extend_climb_path(self):
-        """プレイヤーの上方に足場を追加し、上限のない登り道を作る。"""
-        from stages.helpers import spring_pad
-
+        """安全路と高難度ショートカットが分岐する上昇区間を生成する。"""
+        from stages.helpers import trapezoid, zigzag
         while self._climb_top_y > self.climb_best_y - 1500:
-            self._climb_top_y -= self._climb_rng.randint(66, 82)
-            width = self._climb_rng.randint(150, 220)
-            shift = self._climb_rng.randint(-190, 190)
-            x = max(55, min(self.width - width - 55, self._climb_last_x + shift))
-            vertices = rect(x, self._climb_top_y, width, 20)
-            shape = physics.add_platforms(self.space, [vertices])[0]
-            self.shapes.append(shape)
-            self._climb_dynamic_shapes.append(shape)
-            self._climb_last_x = x + width / 2
+            base_y = self._climb_top_y
+            direction = self._climb_rng.choice((-1, 1))
+            split_x = max(260, min(self.width - 260, self._climb_last_x + direction * 110))
+            merge_x = max(280, min(self.width - 280, split_x + self._climb_rng.randint(-100, 100)))
+            common_y = base_y - 100
+            split_y = base_y - 205
+            merge_y = base_y - self._climb_rng.randint(840, 880)
+            self._add_climb_platform(trapezoid(split_x - 105, common_y, 210, 30, 26))
+            self._add_climb_platform(rect(split_x - 88, split_y, 176, 24))
 
-            if self._climb_rng.randrange(8) == 0:
-                pad_x = x + (width - 100) / 2
-                pads = physics.add_spring_pads(
-                    self.space, [spring_pad(pad_x, self._climb_top_y - 20, 100, 20)])
-                self.spring_shapes.extend(pads)
-                self._climb_dynamic_shapes.extend(pads)
+            # 堅実な外周ルート: 広い足場を小さめのジャンプでいくつもつなぐ
+            safe_count = 4
+            for i in range(safe_count):
+                t = (i + 1) / (safe_count + 1)
+                y = split_y + (merge_y - split_y) * t
+                width = self._climb_rng.randint(145, 205)
+                center_x = (split_x + direction * 185 * (1 - t)
+                            + (merge_x - split_x) * t + 22 * math.sin(i * 1.7))
+                x = max(90, min(self.width - width - 90, center_x - width / 2))
+                kind = ("fragile" if i == safe_count // 2
+                        and self._climb_rng.random() < 0.55 else "normal")
+                shape_kind = i % 3
+                if shape_kind == 0:
+                    vertices = rect(x, y, width, 24)
+                elif shape_kind == 1:
+                    vertices = trapezoid(x, y, width, 36, inset=26)
+                else:
+                    vertices = rect(x, y, width, 18)
+                self._add_climb_platform(vertices, kind)
+
+                # 時々、ゆっくり横移動する足場を外周ルートに置く
+                if i == safe_count // 2 and self._climb_rng.random() < 0.6:
+                    moving_x = max(55, min(self.width - 210, x + direction * 125))
+                    self._add_climb_platform(
+                        rect(moving_x, y - 100, 155, 22),
+                        moving=( (direction, 0), 125, 105, self._climb_rng.random() * 4))
+
+            # 直線的に大きく跳び移る危険ルート。失敗すると分岐下へ戻る
+            shortcut_x = max(85, min(self.width - 305, split_x - direction * 95))
+            shortcut_y = split_y - 170
+            shortcut_platforms = []
+            for offset, width in ((0, 112), (1, 104), (2, 96)):
+                yy = shortcut_y - offset * 155
+                xx = shortcut_x + direction * offset * 135
+                vertices = zigzag(xx, yy, width, 38, teeth=3)[-1]
+                self._add_climb_platform(
+                    vertices, "fragile" if offset == 1 else "normal")
+                shortcut_platforms.append((xx, yy, width))
+
+            # ショートカットの最後にばね床を置き、合流足場までの跳躍を補助する
+            boost_x, boost_y, boost_width = shortcut_platforms[-1]
+            boost = physics.add_spring_pads(
+                self.space, [spring_pad(boost_x + boost_width / 2 - 48, boost_y - 22, 96, 22)])
+            self.spring_shapes.extend(boost)
+            self.climb_dynamic_springs.extend(boost)
+            self._climb_dynamic_shapes.extend(boost)
+
+            # 分岐直後のばね床で、より高い近道へ挑戦できる
+            spring_y = common_y - 22
+            spring_x = split_x - 52
+            pads = physics.add_spring_pads(self.space, [spring_pad(spring_x, spring_y, 104, 22)])
+            self.spring_shapes.extend(pads)
+            self.climb_dynamic_springs.extend(pads)
+            self._climb_dynamic_shapes.extend(pads)
+
+            # 羽アイテムは安全路上に配置し、空中の軌道修正に使えるようにする
+            item_x = split_x - direction * 8
+            self._add_climb_item(item_x, common_y - 72)
+
+            # 合流地点は広い複合足場。次の分岐までの休憩場所にもする
+            landing_x = max(120, min(self.width - 360, merge_x - 110))
+            platform_type = self._climb_rng.randrange(3)
+            if platform_type == 0:
+                landing = trapezoid(landing_x, merge_y, 250, 42, 38)
+                self._add_climb_platform(landing)
+            elif platform_type == 1:
+                for segment in zigzag(landing_x, merge_y, 250, 48, teeth=5):
+                    self._add_climb_platform(segment)
+            else:
+                self._add_climb_platform(rect(landing_x, merge_y, 250, 28))
+
+            self._climb_top_y = merge_y
+            self._climb_last_x = landing_x + 125
+            if self._climb_rng.random() < 0.65:
+                self._add_climb_item(landing_x + self._climb_rng.randint(40, 210), merge_y - 88)
 
     def _prune_climb_path(self):
         """十分下へ離れた足場を破棄し、長時間プレイ時の物理形状数を抑える。"""
@@ -259,6 +443,21 @@ class Stage:
                     self.shapes.remove(shape)
                 if shape in self.spring_shapes:
                     self.spring_shapes.remove(shape)
+                if shape in self.climb_item_shapes:
+                    self.climb_item_shapes.pop(shape, None)
+                    self.climb_items = [item for item in self.climb_items if item["shape"] is not shape]
+                self.climb_fragile.pop(shape, None)
+                self._climb_fragile_touches.discard(shape)
+        for platform in list(self.climb_moving_platforms):
+            lowest_y = platform.body.position.y + max(vertex.y for vertex in platform.shape.get_vertices())
+            if lowest_y > self.climb_best_y + 1800:
+                if platform.shape in self.space.shapes:
+                    self.space.remove(platform.shape, platform.body)
+                self.climb_moving_platforms.remove(platform)
+                if platform.shape in self.shapes:
+                    self.shapes.remove(platform.shape)
+                if platform.shape in self._climb_dynamic_shapes:
+                    self._climb_dynamic_shapes.remove(platform.shape)
 
     # ---------- チェックポイントの保存・復元 ----------
     def _save_checkpoint(self, egg):
@@ -288,6 +487,13 @@ class Stage:
     def reset_progress(self):
         """ステージの最初からやり直す(トースト・チェックポイントを初期状態に戻す)。"""
         if self.endless_climb:
+            for platform in self.climb_moving_platforms:
+                if platform.shape in self.space.shapes:
+                    self.space.remove(platform.shape, platform.body)
+                if platform.shape in self.shapes:
+                    self.shapes.remove(platform.shape)
+            self.climb_moving_platforms.clear()
+            self.climb_dynamic_springs.clear()
             for shape in self._climb_dynamic_shapes:
                 if shape in self.space.shapes:
                     self.space.remove(shape)
@@ -296,6 +502,13 @@ class Stage:
                 if shape in self.spring_shapes:
                     self.spring_shapes.remove(shape)
             self._climb_dynamic_shapes.clear()
+            self.climb_items.clear()
+            self.climb_item_shapes.clear()
+            self.climb_fragile.clear()
+            self._climb_fragile_touches.clear()
+            self.climb_effects.clear()
+            self.climb_float_timer = 0.0
+            self.climb_item_touched.clear()
             self._climb_rng = random.Random(self._climb_seed)
             self._climb_top_y = min(vertex.y for shape in self.shapes for vertex in shape.get_vertices())
             self._climb_last_x = self.egg_start[0]
@@ -340,10 +553,22 @@ class Stage:
             points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
             shadow = [(x + 2, y + 7) for x, y in points]
             pygame.draw.polygon(surface, (139, 157, 159), shadow)
-            pygame.draw.polygon(surface, config.COLOR_PLATFORM, points)
-            pygame.draw.polygon(surface, (104, 133, 119), points, 3)
+            if shape in self.climb_fragile:
+                ratio = min(1.0, self.climb_fragile[shape] / 0.75)
+                fill = (218, 172 - round(76 * ratio), 95 - round(35 * ratio))
+                edge = (130, 77, 52)
+            else:
+                fill = config.COLOR_PLATFORM
+                edge = (104, 133, 119)
+            pygame.draw.polygon(surface, fill, points)
+            pygame.draw.polygon(surface, edge, points, 3)
         for platform in self.moving_platforms:
             platform.draw(surface, camera)
+        for platform in self.climb_moving_platforms:
+            platform.draw(surface, camera)
+        for item in self.climb_items:
+            if not item["collected"]:
+                self._draw_float_item(surface, camera, item)
         for shape in self.spring_shapes:
             points = [camera.apply((v.x, v.y)) for v in shape.get_vertices()]
             left = round(min(p[0] for p in points))
@@ -368,6 +593,21 @@ class Stage:
         for toast in self.toasts:
             if not toast.collected:
                 self._draw_toast(surface, camera, toast)
+        for effect in self.climb_effects:
+            progress = 1.0 - effect["timer"] / 0.8
+            cx, cy = camera.apply((effect["x"], effect["y"]))
+            pygame.draw.circle(surface, (192, 239, 255), (round(cx), round(cy)),
+                               int(12 + progress * 28), 3)
+
+    def _draw_float_item(self, surface, camera, item):
+        """数秒浮遊できる羽アイテム。"""
+        cx, cy = camera.apply((item["x"], item["y"]))
+        pygame.draw.circle(surface, (246, 251, 255), (round(cx), round(cy)), 20)
+        pygame.draw.circle(surface, (112, 197, 222), (round(cx), round(cy)), 20, 3)
+        pygame.draw.ellipse(surface, (255, 255, 255),
+                            pygame.Rect(round(cx - 5), round(cy - 14), 10, 24))
+        pygame.draw.line(surface, (112, 197, 222), (round(cx), round(cy - 14)),
+                         (round(cx), round(cy + 13)), 2)
 
     def _draw_toast(self, surface, camera, toast):
         """トースト: 角の丸い四角に、上の2つのふくらみを付けた食パンの形。"""

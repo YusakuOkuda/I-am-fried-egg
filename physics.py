@@ -64,7 +64,19 @@ def add_spring_pads(space, pads):
     return shapes
 
 
-def register_spring_collisions(space, on_spring=None):
+def rising_through_platform(egg_shape, platform_shape):
+    """卵が上昇中に足場の下側へいる場合、足場を通り抜けるか判定する。"""
+    egg = egg_shape.body.user_data
+    if egg is None or egg_shape.body.velocity.y >= 0:
+        return False
+    egg_bottom = max(egg_shape.body.local_to_world(vertex).y
+                     for vertex in egg_shape.get_vertices())
+    platform_top = min(platform_shape.body.local_to_world(vertex).y
+                       for vertex in platform_shape.get_vertices())
+    return egg_bottom > platform_top
+
+
+def register_spring_collisions(space, on_spring=None, one_way=False):
     """卵が上からバネ床へ着地したとき、反発を強めるイベントを記録する。"""
     def begin(arbiter, _space, _data):
         egg_shape = next(shape for shape in arbiter.shapes
@@ -77,7 +89,17 @@ def register_spring_collisions(space, on_spring=None):
             elif on_spring:
                 on_spring()
 
-    space.on_collision(config.COLLISION_EGG, config.COLLISION_SPRING, begin=begin)
+    def pre_solve(arbiter, _space, _data):
+        if one_way:
+            egg_shape = next(shape for shape in arbiter.shapes
+                             if shape.collision_type == config.COLLISION_EGG)
+            spring_shape = next(shape for shape in arbiter.shapes if shape is not egg_shape)
+            if rising_through_platform(egg_shape, spring_shape):
+                return False
+        return True
+
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_SPRING,
+                       begin=begin, pre_solve=pre_solve)
 
 
 def register_spike_collisions(space, on_spike=None):

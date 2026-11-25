@@ -58,3 +58,18 @@ def moving_platform(x, y, w, h, direction, distance, speed, pingpong=True, phase
 def spring_pad(x, y, w=110, h=20):
     """跳ね上げ床の設定。x,y は左上、w,h は大きさ。"""
     return (x, y, w, h)
+
+
+def trapezoid(x, y, w, h, inset=24):
+    """上面が広い台形足場。"""
+    return [(x + inset, y), (x + w - inset, y), (x + w, y + h), (x, y + h)]
+
+
+def zigzag(x, y, w, h, teeth=4):
+    """段差ごとに分割した階段足場。返す各長方形は凸形状。"""
+    step = w / teeth
+    return [
+        rect(x + i * step, y + h - (i + 1) * (h / teeth),
+             step + 5, h / teeth + 4)
+        for i in range(teeth)
+    ]

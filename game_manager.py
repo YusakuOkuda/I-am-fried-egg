@@ -101,21 +101,25 @@ class Game:
         self.egg = Egg(self.space, *self.stage.egg_start)
         self.players = {"host": self.egg}
         self._configure_player(self.egg)
+        if self.climb_mode:
+            self.egg.spring_impulse = 990.0
+            self.egg.jump_multiplier = 1.24
         if not self.climb_mode:
             physics.register_egg_collisions(self.space, self.egg.add_impact)
             physics.register_item_collisions(
                 self.space, self.stage.on_toast_touched,
                 self.stage.on_checkpoint_touched, self.stage.on_goal_touched)
             physics.register_spike_collisions(self.space, self.egg.add_spike_touch)
-        physics.register_spring_collisions(self.space, self.egg.add_spring_touch)
+        else:
+            self.stage.register_climb_collisions()
+        physics.register_spring_collisions(
+            self.space, self.egg.add_spring_touch, one_way=self.climb_mode)
         if self.net_mode == "host":
             for index, player_id in enumerate(sorted(self.remote_inputs), start=1):
                 self.players[player_id] = self._create_remote_egg(index)
         self.camera = Camera(self.stage.width, self.stage.height)
         self.camera.allow_vertical_negative = self.climb_mode
         self.camera.snap_to(*self.stage.egg_start)
-        if self.climb_mode:
-            self.camera.y = 0.0
         logger.info("ステージ開始: ステージ%d(トースト%d個)", number, self.stage.toast_total)
 
         self._logged_toast_count = 0          # ログ出力用: すでに記録したトースト取得数
@@ -542,7 +546,10 @@ class Game:
                 else:
                     control = self.remote_inputs.get(player_id, {"move": 0, "jump": False})
                     move, jump = control["move"], control["jump"]
-                player.apply_controls(move, jump, config.PHYSICS_DT)
+                player.apply_controls(
+                    move, jump, config.PHYSICS_DT,
+                    float_pressed=(player_id == "host" and keys[pygame.K_e]),
+                    allow_float=self.climb_mode)
             self.jump_requested = False           # ジャンプ要求は最初の1ステップだけ有効
             for control in self.remote_inputs.values():
                 control["jump"] = False
@@ -705,10 +712,19 @@ class Game:
             score = fonts["ui"].render(f"上昇 {current} m   最高 {best} m", True, config.COLOR_TEXT)
             screen.blit(score, (config.UI_MARGIN, config.UI_MARGIN + 38))
             guide = fonts["small"].render(
-                "A/←:左へ移動   D/→:右へ移動   Space:ジャンプ   落下すると最初から", True,
+                "A/←:左へ   D/→:右へ   Space:ジャンプ   E:羽を使って浮遊", True,
                 config.COLOR_TEXT)
             screen.blit(guide, (config.UI_MARGIN,
                                 config.WINDOW_HEIGHT - config.UI_MARGIN - guide.get_height()))
+            status_text = "落下すると最初から"
+            if self.stage.climb_float_timer > 0:
+                status_text += f"   浮遊チャージ {self.stage.climb_float_timer:.1f}秒"
+            if self.stage.climb_popup_timer > 0:
+                status = fonts["small"].render(self.stage.climb_popup, True, (37, 99, 125))
+                screen.blit(status, status.get_rect(center=(config.WINDOW_WIDTH // 2, 92)))
+            else:
+                status = fonts["small"].render(status_text, True, config.COLOR_TEXT)
+                screen.blit(status, (config.UI_MARGIN, config.UI_MARGIN + 72))
             return
         difficulty = DIFFICULTIES[self.difficulty_index][0]
         label = (f"STAGE {self.stage.number} / {difficulty}"

@@ -65,6 +65,8 @@ class Egg:
         self.pending_impacts = []
         self.touching_spike = False
         self.spring_touched = False
+        self.float_glide_timer = 0.0
+        self.spring_impulse = 820.0
 
     # ---------- 状態リセット(開発用・ゲームオーバーからの再開用) ----------
     def reset(self, x, y, hp=None):
@@ -79,14 +81,19 @@ class Egg:
         self.ground_velocity = (0.0, 0.0)
         self.touching_spike = False
         self.spring_touched = False
+        self.float_glide_timer = 0.0
         self.durability.reset(hp)
         self.pending_impacts.clear()
 
     # ---------- 1ステップ前の操作処理 ----------
-    def apply_controls(self, move_dir, jump_pressed, dt):
+    def apply_controls(self, move_dir, jump_pressed, dt, float_pressed=False, allow_float=False):
         """move_dir: -1(左) / 0 / +1(右)。jump_pressed: このステップでジャンプ要求があるか。"""
         body = self.body
         self.jump_lockout = max(0.0, self.jump_lockout - dt)
+        floating = allow_float and float_pressed and not self.grounded and self.float_glide_timer > 0.0
+        if floating:
+            self.float_glide_timer = max(0.0, self.float_glide_timer - dt)
+            body.velocity = (body.velocity.x, min(body.velocity.y, 70.0))
 
         # --- ジャンプ(固定高さ:上向き速度を一定値にする) ---
         can_jump = self.time_since_grounded <= config.COYOTE_TIME and self.jump_lockout <= 0.0
@@ -167,7 +174,7 @@ class Egg:
     def update_spring(self):
         if self.spring_touched:
             self.spring_touched = False
-            self.body.velocity = (self.body.velocity.x, min(self.body.velocity.y, -820.0))
+            self.body.velocity = (self.body.velocity.x, min(self.body.velocity.y, -self.spring_impulse))
             self.jump_lockout = config.JUMP_LOCKOUT
             self.time_since_grounded = 999.0
             self.grounded = False

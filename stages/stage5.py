@@ -9,7 +9,6 @@ STAGE = {
     "egg_start": (640, 59950),
     "fall_limit": 61000,
     "endless_climb": True,
-    "climb_seed": 41827,
     "sky_colors": ((100, 171, 215), (224, 243, 246)),
     "platforms": [
         rect(440, 60000, 400, 28),
