@@ -41,11 +41,13 @@ class Egg:
         self.body = pymunk.Body(config.EGG_MASS, moment)
         self.body.center_of_gravity = cog
         self.body.position = (x, y)
+        self.body.user_data = self
 
         self.shape = pymunk.Poly(self.body, self.local_vertices)
         self.shape.friction = config.EGG_FRICTION
         self.shape.elasticity = config.EGG_ELASTICITY
         self.shape.collision_type = config.COLLISION_EGG
+        self.shape.filter = pymunk.ShapeFilter(group=1)  # 協力プレイヤー同士は押し合わない
         space.add(self.body, self.shape)
 
         # 接地関連の状態

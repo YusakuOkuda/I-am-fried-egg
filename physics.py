@@ -64,26 +64,36 @@ def add_spring_pads(space, pads):
     return shapes
 
 
-def register_spring_collisions(space, on_spring):
+def register_spring_collisions(space, on_spring=None):
     """卵が上からバネ床へ着地したとき、反発を強めるイベントを記録する。"""
     def begin(arbiter, _space, _data):
         egg_shape = next(shape for shape in arbiter.shapes
                          if shape.collision_type == config.COLLISION_EGG)
         normal = arbiter.normal if arbiter.shapes[0] is egg_shape else -arbiter.normal
         if egg_shape.body.velocity.y > 0 and normal.y > config.GROUND_NORMAL_MIN_Y:
-            on_spring()
+            egg = egg_shape.body.user_data
+            if egg is not None:
+                egg.add_spring_touch()
+            elif on_spring:
+                on_spring()
 
     space.on_collision(config.COLLISION_EGG, config.COLLISION_SPRING, begin=begin)
 
 
-def register_spike_collisions(space, on_spike):
+def register_spike_collisions(space, on_spike=None):
     """卵がトゲに触れている間、物理ステップごとに on_spike() を呼ぶ。
 
     触れ続けている間も呼ばれるので、無敵時間が終わるとまたダメージが入る。
     ダメージを与えるかどうかの判断(無敵時間)は耐久度側で行う。
     """
-    def pre_solve(_arbiter, _space, _data):
-        on_spike()
+    def pre_solve(arbiter, _space, _data):
+        egg_shape = next(shape for shape in arbiter.shapes
+                         if shape.collision_type == config.COLLISION_EGG)
+        egg = egg_shape.body.user_data
+        if egg is not None:
+            egg.add_spike_touch()
+        elif on_spike:
+            on_spike()
 
     space.on_collision(config.COLLISION_EGG, config.COLLISION_SPIKE, pre_solve=pre_solve)
 
@@ -102,14 +112,20 @@ def register_item_collisions(space, on_toast, on_checkpoint, on_goal):
 
     ここでは通知だけ。取得や保存の処理は物理ステップの後でまとめて行う。
     """
+    def item_callback(arbiter, callback):
+        egg_shape = next(shape for shape in arbiter.shapes
+                         if shape.collision_type == config.COLLISION_EGG)
+        item_shape = next(shape for shape in arbiter.shapes if shape is not egg_shape)
+        callback(item_shape, egg_shape.body.user_data)
+
     def toast_begin(arbiter, _space, _data):
-        on_toast(arbiter.shapes[1])        # 登録した順(卵, トースト)
+        item_callback(arbiter, on_toast)
 
     def checkpoint_begin(arbiter, _space, _data):
-        on_checkpoint(arbiter.shapes[1])
+        item_callback(arbiter, on_checkpoint)
 
     def goal_begin(arbiter, _space, _data):
-        on_goal(arbiter.shapes[1])
+        item_callback(arbiter, on_goal)
 
     space.on_collision(config.COLLISION_EGG, config.COLLISION_TOAST, begin=toast_begin)
     space.on_collision(config.COLLISION_EGG, config.COLLISION_CHECKPOINT, begin=checkpoint_begin)
@@ -140,7 +156,11 @@ def register_egg_collisions(space, on_impact):
             kind = damage.KIND_LANDING
         else:
             kind = damage.KIND_COLLISION
-        on_impact(kind, speed)
+        egg = egg_shape.body.user_data
+        if egg is not None:
+            egg.add_impact(kind, speed)
+        else:
+            on_impact(kind, speed)
 
     space.on_collision(config.COLLISION_EGG, config.COLLISION_PLATFORM, begin=begin)
 

@@ -119,7 +119,10 @@ class Stage:
         self.pickup_effects = []       # トースト取得時のリングと光
         self._touched_toasts = []      # 物理ステップ中に触れたものを集めておく
         self._touched_checkpoint = False
+        self._touched_checkpoint_player = None
         self._touched_goal = False
+        self._touched_goal_player = None
+        self._goal_players = set()
 
     # ---------- トースト数 ----------
     @property
@@ -131,14 +134,16 @@ class Stage:
         return len(self.toasts)
 
     # ---------- 衝突コールバックから呼ばれる(記録だけ) ----------
-    def on_toast_touched(self, shape):
-        self._touched_toasts.append(shape)
+    def on_toast_touched(self, shape, egg):
+        self._touched_toasts.append((shape, egg))
 
-    def on_checkpoint_touched(self, shape):
+    def on_checkpoint_touched(self, shape, egg):
         self._touched_checkpoint = True
+        self._touched_checkpoint_player = egg
 
-    def on_goal_touched(self, shape):
+    def on_goal_touched(self, shape, egg):
         self._touched_goal = True
+        self._touched_goal_player = egg
 
     # ---------- 動く足場 ----------
     def prepare_physics_step(self, dt):
@@ -151,11 +156,18 @@ class Stage:
         for platform in self.moving_platforms:
             platform.snap_to_time(self.time)
 
+    def sync_time(self, stage_time):
+        """LANクライアント側の動く足場をホストの時刻に合わせる。"""
+        self.time = stage_time
+        self._snap_platforms()
+
     # ---------- 1ステップ後の処理 ----------
-    def process_items(self, egg):
-        """このステップで触れたトースト・チェックポイントを処理する。"""
+    def process_items(self, eggs):
+        """このステップで触れたトースト等を処理する。トーストは触れた卵を回復する。"""
+        if not isinstance(eggs, (tuple, list)):
+            eggs = [eggs]
         touched, self._touched_toasts = self._touched_toasts, []
-        for shape in touched:
+        for shape, egg in touched:
             toast = self._toast_by_shape.get(shape)
             if toast is None or toast.collected:
                 continue                      # 取得済みは再取得できない
@@ -168,13 +180,23 @@ class Stage:
             self.pickup_effects.append({"x": toast.x, "y": toast.y, "timer": 0.7})
 
         touched_checkpoint, self._touched_checkpoint = self._touched_checkpoint, False
+        checkpoint_player = self._touched_checkpoint_player
+        self._touched_checkpoint_player = None
         if (touched_checkpoint and self.checkpoint is not None
-                and not self.checkpoint.active and not egg.durability.is_broken):
+                and not self.checkpoint.active and checkpoint_player is not None
+                and not checkpoint_player.durability.is_broken):
             self.checkpoint.active = True
-            self._save_checkpoint(egg)
+            self._save_checkpoint(checkpoint_player)
 
         touched_goal, self._touched_goal = self._touched_goal, False
-        if touched_goal and self.goal is not None and not egg.durability.is_broken:
+        goal_player = self._touched_goal_player
+        self._touched_goal_player = None
+        if (touched_goal and self.goal is not None and goal_player is not None
+                and not goal_player.durability.is_broken):
+            self._goal_players.add(goal_player)
+        survivors = [egg for egg in eggs
+                     if not egg.durability.is_broken and egg.body.position.y <= self.fall_limit]
+        if survivors and all(egg in self._goal_players for egg in survivors):
             self.cleared = True
 
     def update(self, dt):
@@ -227,7 +249,10 @@ class Stage:
         self.pickup_effects.clear()
         self._touched_toasts.clear()
         self._touched_checkpoint = False
+        self._touched_checkpoint_player = None
         self._touched_goal = False
+        self._touched_goal_player = None
+        self._goal_players.clear()
         self.cleared = False
 
     # ---------- 描画 ----------
