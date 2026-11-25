@@ -15,8 +15,7 @@
 起動方法:
   python main.py     : タイトル画面から
   python main.py 2   : ステージ2から(開発用。タイトルを飛ばす。0 はテストステージ)
-  python main.py --host             : LAN協力プレイのホスト
-  python main.py --join 192.168.1.5 : 指定したホストへ参加
+  LAN協力プレイは現在一時停止中(起動オプションなし)
 """
 
 import logging
@@ -29,17 +28,12 @@ import pymunk
 import config
 from debug import setup_logging
 from game_manager import Game
-from lan import DEFAULT_PORT
 from stage import STAGE_DATA
 
 
 def parse_args(logger):
-    """起動オプション。LANではホストまたは参加側を指定する。"""
+    """開発用ステージ番号を受け取る。"""
     parser = argparse.ArgumentParser(description="Lost Egg 2D")
-    connection = parser.add_mutually_exclusive_group()
-    connection.add_argument("--host", action="store_true", help="このPCでLAN協力プレイを開始")
-    connection.add_argument("--join", metavar="IP", help="ホストPCのIPv4アドレスへ参加")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="LAN通信ポート")
     parser.add_argument("stage_pos", nargs="?", help="開発用ステージ番号(例: 2)")
     args = parser.parse_args()
 
@@ -57,8 +51,6 @@ def parse_args(logger):
         if start_stage is not None:
             logger.warning("存在しないステージ番号のため無視します: %d", start_stage)
         start_stage = None
-    if (args.host or args.join) and start_stage is None:
-        start_stage = 1
     return args, start_stage
 
 
@@ -69,12 +61,8 @@ def main():
                 sys.version.split()[0], pygame.version.ver, pymunk.version)
     logger.info("ログファイル: %s", log_path)
     try:
-        args, start_stage = parse_args(logger)
-        try:
-            Game(start_stage, host_lan=args.host, join_host=args.join, port=args.port).run()
-        except OSError as error:
-            logger.exception("LAN接続の開始に失敗しました")
-            print(f"LAN接続に失敗しました: {error}")
+        _, start_stage = parse_args(logger)
+        Game(start_stage).run()
     finally:
         # 想定外のエラーは debug.py の仕組みで、エラーの詳細がログに記録される
         logger.info("ゲーム終了")

@@ -136,11 +136,11 @@ def draw_menu(surface, fonts, title, items, selected, message=None):
     _draw_items(surface, fonts, items, selected, cx, y)
 
 
-def _draw_items(surface, fonts, items, selected, cx, y):
+def _draw_items(surface, fonts, items, selected, cx, y, spacing=76):
     """縦に並ぶメニュー項目を描く。選択中の項目は白く強調する。"""
     for i, item in enumerate(items):
-        rect = pygame.Rect(0, 0, 520, 58)
-        rect.center = (cx, y + i * 76)
+        rect = pygame.Rect(0, 0, 640, 58)
+        rect.center = (cx, y + i * spacing)
         if i == selected:
             bg, fg = config.COLOR_MENU_SELECTED_BG, config.COLOR_MENU_SELECTED_TEXT
         else:
@@ -156,11 +156,11 @@ def draw_title_screen(surface, fonts, title, items, selected):
     cx = config.WINDOW_WIDTH // 2
     title_surf = fonts["title"].render(title, True, config.COLOR_TEXT)
     surface.blit(title_surf, title_surf.get_rect(center=(cx, 200)))
-    _draw_items(surface, fonts, items, selected, cx, 380)
-    hint = fonts["small"].render("難易度の行で ← / → または Enter で変更", True, config.COLOR_TEXT)
+    _draw_items(surface, fonts, items, selected, cx, 350, spacing=62)
+    hint = fonts["small"].render("モード・難易度の行で ← / → または Enter で変更", True, config.COLOR_TEXT)
     surface.blit(hint, hint.get_rect(center=(cx, config.WINDOW_HEIGHT - 55)))
     details = fonts["small"].render(
-        "やさしい: ジャンプ強・ダメージ小   ふつう: 標準   むずかしい: HP75・ダメージ大",
+        "上昇モードは耐久度なし。落下したらやり直し。",
         True, config.COLOR_TEXT)
     surface.blit(details, details.get_rect(center=(cx, config.WINDOW_HEIGHT - 25)))
 

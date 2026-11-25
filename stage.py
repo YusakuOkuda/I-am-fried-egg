@@ -1,13 +1,14 @@
 """ステージデータの読み込み、物理空間への登録、描画、トースト・チェックポイント・ゴールの管理を担当するファイル。"""
 
 import math
+import random
 
 import pygame
 
 import config
 import physics
 from moving_platform import MovingPlatform
-from stages import stage1, stage2, stage3, stage4, test_stage
+from stages import stage1, stage2, stage3, stage4, stage5, test_stage
 from stages.helpers import rect
 
 
@@ -34,6 +35,7 @@ STAGE_DATA = {
     2: stage2.STAGE,
     3: stage3.STAGE,
     4: stage4.STAGE,
+    5: stage5.STAGE,
 }
 
 
@@ -64,12 +66,22 @@ class Goal:
 class Stage:
     def __init__(self, space, number):
         data = STAGE_DATA[number]
+        self.space = space
         self.number = number
         self.name = data["name"]
         self.width = data["width"]
         self.height = data["height"]
         self.egg_start = data["egg_start"]
         self.fall_limit = data["fall_limit"]
+        self.endless_climb = data.get("endless_climb", False)
+        self.climb_start_y = self.egg_start[1]
+        self.climb_best_y = self.egg_start[1]
+        self._climb_seed = data.get("climb_seed", 0)
+        self._climb_rng = random.Random(self._climb_seed)
+        self._climb_top_y = min((platform[0][1] for platform in data["platforms"]),
+                                default=self.egg_start[1])
+        self._climb_last_x = self.egg_start[0]
+        self._climb_dynamic_shapes = []
         self.sky_colors = data.get("sky_colors", ((166, 215, 239), (255, 239, 205)))
         self.shapes = physics.add_platforms(space, data["platforms"])
 
@@ -199,14 +211,54 @@ class Stage:
         if survivors and all(egg in self._goal_players for egg in survivors):
             self.cleared = True
 
-    def update(self, dt):
+    def update(self, dt, eggs=None):
         """取得表示のタイマーを進める。"""
+        if self.endless_climb and eggs:
+            self.climb_best_y = min(self.climb_best_y,
+                                    *(egg.body.position.y for egg in eggs))
+            self._extend_climb_path()
+            self._prune_climb_path()
         for popup in self.popups:
             popup["timer"] -= dt
         self.popups = [p for p in self.popups if p["timer"] > 0.0]
         for effect in self.pickup_effects:
             effect["timer"] -= dt
         self.pickup_effects = [e for e in self.pickup_effects if e["timer"] > 0.0]
+
+    def _extend_climb_path(self):
+        """プレイヤーの上方に足場を追加し、上限のない登り道を作る。"""
+        from stages.helpers import spring_pad
+
+        while self._climb_top_y > self.climb_best_y - 1500:
+            self._climb_top_y -= self._climb_rng.randint(66, 82)
+            width = self._climb_rng.randint(150, 220)
+            shift = self._climb_rng.randint(-190, 190)
+            x = max(55, min(self.width - width - 55, self._climb_last_x + shift))
+            vertices = rect(x, self._climb_top_y, width, 20)
+            shape = physics.add_platforms(self.space, [vertices])[0]
+            self.shapes.append(shape)
+            self._climb_dynamic_shapes.append(shape)
+            self._climb_last_x = x + width / 2
+
+            if self._climb_rng.randrange(8) == 0:
+                pad_x = x + (width - 100) / 2
+                pads = physics.add_spring_pads(
+                    self.space, [spring_pad(pad_x, self._climb_top_y - 20, 100, 20)])
+                self.spring_shapes.extend(pads)
+                self._climb_dynamic_shapes.extend(pads)
+
+    def _prune_climb_path(self):
+        """十分下へ離れた足場を破棄し、長時間プレイ時の物理形状数を抑える。"""
+        for shape in list(self._climb_dynamic_shapes):
+            lowest_y = max(vertex.y for vertex in shape.get_vertices())
+            if lowest_y > self.climb_best_y + 1800:
+                if shape in self.space.shapes:
+                    self.space.remove(shape)
+                self._climb_dynamic_shapes.remove(shape)
+                if shape in self.shapes:
+                    self.shapes.remove(shape)
+                if shape in self.spring_shapes:
+                    self.spring_shapes.remove(shape)
 
     # ---------- チェックポイントの保存・復元 ----------
     def _save_checkpoint(self, egg):
@@ -235,6 +287,19 @@ class Stage:
 
     def reset_progress(self):
         """ステージの最初からやり直す(トースト・チェックポイントを初期状態に戻す)。"""
+        if self.endless_climb:
+            for shape in self._climb_dynamic_shapes:
+                if shape in self.space.shapes:
+                    self.space.remove(shape)
+                if shape in self.shapes:
+                    self.shapes.remove(shape)
+                if shape in self.spring_shapes:
+                    self.spring_shapes.remove(shape)
+            self._climb_dynamic_shapes.clear()
+            self._climb_rng = random.Random(self._climb_seed)
+            self._climb_top_y = min(vertex.y for shape in self.shapes for vertex in shape.get_vertices())
+            self._climb_last_x = self.egg_start[0]
+            self.climb_best_y = self.climb_start_y
         for toast in self.toasts:
             toast.collected = False
         if self.checkpoint is not None:

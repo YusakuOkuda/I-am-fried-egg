@@ -17,13 +17,17 @@ class Camera:
         self.y = 0.0
         self.shake_x = 0.0
         self.shake_y = 0.0
+        self.allow_vertical_negative = False
 
     def _clamp(self):
         """ステージの外が映らないように位置を制限する。"""
         max_x = max(0.0, self.stage_width - config.WINDOW_WIDTH)
         max_y = max(0.0, self.stage_height - config.WINDOW_HEIGHT)
         self.x = min(max(self.x, 0.0), max_x)
-        self.y = min(max(self.y, 0.0), max_y)
+        if self.allow_vertical_negative:
+            self.y = min(self.y, max_y)
+        else:
+            self.y = min(max(self.y, 0.0), max_y)
 
     def snap_to(self, target_x, target_y):
         """追従せず、一瞬でその位置に合わせる(開始・再開・リセット用)。"""

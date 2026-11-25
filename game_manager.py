@@ -22,7 +22,6 @@ import physics
 import ui
 from camera import Camera
 from debug import draw_debug
-from lan import DEFAULT_PORT, LanClient, LanServer, local_ip
 from player import Egg
 from save_manager import SaveManager
 from stage import STAGE_DATA, Stage
@@ -47,12 +46,14 @@ DIFFICULTIES = (
 PAUSE_ITEMS = [("resume", "再開"), ("title", "タイトルへ戻る")]
 GAME_OVER_ITEMS = [("checkpoint", "チェックポイントから再開"), ("title", "タイトルへ戻る")]
 GAME_CLEAR_ITEMS = [("title", "タイトルへ戻る"), ("again", "もう一度プレイ")]
+CLIMB_GAME_OVER_ITEMS = [("climb_restart", "もう一度登る"), ("title", "タイトルへ戻る")]
+CLIMB_STAGE_ID = 5
 CONFIRM_ITEMS = [("yes", "はい"), ("no", "いいえ")]
 STAGE_SELECT_HINT = "↑/↓:選択   Enter:決定   Esc:戻る"
 
 
 class Game:
-    def __init__(self, start_stage=None, host_lan=False, join_host=None, port=DEFAULT_PORT):
+    def __init__(self, start_stage=None):
         """start_stage を指定するとタイトルを飛ばしてそのステージから始める(開発用)。省略するとタイトル画面から。"""
         pygame.init()
         self.screen = pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
@@ -74,21 +75,19 @@ class Game:
         self.shake_phase = 0.0
         self.clear_elapsed = 0.0
         self.difficulty_index = 1
-        self.net_mode = "host" if host_lan else ("client" if join_host else None)
-        self.net_server = LanServer(port) if host_lan else None
-        self.net_client = LanClient(join_host, port) if join_host else None
-        self.player_id = "host" if host_lan else None
+        self.game_mode = "stage"
+        # LAN協力プレイは一時停止中。通信実装は残し、起動経路は無効化している。
+        self.net_mode = None
+        self.net_server = None
+        self.net_client = None
+        self.player_id = None
         self.players = {}
         self.remote_inputs = {}
         self.net_jump_pending = False
         self.net_send_timer = 0.0
         self.net_snapshot_timer = 0.0
         self.net_disconnected = False
-        if self.net_mode:
-            if host_lan:
-                print(f"LAN協力プレイ受付中: {local_ip()}:{port} (最大{8}人)")
-            self.load_stage(start_stage or 1)
-        elif start_stage is None:
+        if start_stage is None:
             self.go_to_title()
         else:
             self.load_stage(start_stage)
@@ -98,20 +97,25 @@ class Game:
         """新しい物理空間にステージと卵を作り、最初から始める。"""
         self.space = physics.create_space()
         self.stage = Stage(self.space, number)
+        self.climb_mode = self.stage.endless_climb
         self.egg = Egg(self.space, *self.stage.egg_start)
         self.players = {"host": self.egg}
         self._configure_player(self.egg)
-        physics.register_egg_collisions(self.space, self.egg.add_impact)
-        physics.register_item_collisions(
-            self.space, self.stage.on_toast_touched,
-            self.stage.on_checkpoint_touched, self.stage.on_goal_touched)
-        physics.register_spike_collisions(self.space, self.egg.add_spike_touch)
+        if not self.climb_mode:
+            physics.register_egg_collisions(self.space, self.egg.add_impact)
+            physics.register_item_collisions(
+                self.space, self.stage.on_toast_touched,
+                self.stage.on_checkpoint_touched, self.stage.on_goal_touched)
+            physics.register_spike_collisions(self.space, self.egg.add_spike_touch)
         physics.register_spring_collisions(self.space, self.egg.add_spring_touch)
         if self.net_mode == "host":
             for index, player_id in enumerate(sorted(self.remote_inputs), start=1):
                 self.players[player_id] = self._create_remote_egg(index)
         self.camera = Camera(self.stage.width, self.stage.height)
+        self.camera.allow_vertical_negative = self.climb_mode
         self.camera.snap_to(*self.stage.egg_start)
+        if self.climb_mode:
+            self.camera.y = 0.0
         logger.info("ステージ開始: ステージ%d(トースト%d個)", number, self.stage.toast_total)
 
         self._logged_toast_count = 0          # ログ出力用: すでに記録したトースト取得数
@@ -208,8 +212,10 @@ class Game:
 
     def _title_menu_items(self):
         name = DIFFICULTIES[self.difficulty_index][0]
+        mode = "ステージ攻略" if self.game_mode == "stage" else "ひたすら上へ"
         return [
             ("start", "ゲーム開始"),
+            ("mode", f"モード: {mode}  ◀ ▶"),
             ("select", "ステージ選択"),
             ("difficulty", f"難易度: {name}  ◀ ▶"),
             ("quit", "ゲーム終了"),
@@ -221,6 +227,8 @@ class Game:
 
     def open_stage_select(self):
         """ステージ選択画面を開く。カーソルは「次に挑戦するステージ」に置く。"""
+        self.game_mode = "stage"
+        self.menu_items = self._title_menu_items()
         self.state = STATE_STAGE_SELECT
         self.menu_index = self.save.next_start_stage() - 1    # メニュー番号は 0 始まり
 
@@ -239,9 +247,10 @@ class Game:
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             number = self.menu_index + 1
             if self.save.is_unlocked(number):
+                self.game_mode = "stage"
                 self.load_stage(number)
         elif key == pygame.K_ESCAPE:
-            self.go_to_title(index=1)          # カーソルは「ステージ選択」に置く
+            self.go_to_title(index=2)          # カーソルは「ステージ選択」に置く
 
     # ---------- メインループ ----------
     def run(self):
@@ -266,7 +275,18 @@ class Game:
             return
         key = event.key
 
-        if self.state == STATE_PLAYING:
+        if self.state == STATE_TITLE:
+            if key in (pygame.K_LEFT, pygame.K_RIGHT):
+                selected_action = self.menu_items[self.menu_index][0]
+                step = -1 if key == pygame.K_LEFT else 1
+                if selected_action == "difficulty":
+                    self.change_difficulty(step)
+                elif selected_action == "mode":
+                    self.game_mode = "climb" if self.game_mode == "stage" else "stage"
+                    self.menu_items = self._title_menu_items()
+                return
+            self.handle_menu_key(key)
+        elif self.state == STATE_PLAYING:
             if key == pygame.K_ESCAPE and self.net_mode != "client":
                 self.open_menu(STATE_PAUSED, PAUSE_ITEMS)
             elif key == pygame.K_SPACE:
@@ -276,18 +296,15 @@ class Game:
                     self.jump_requested = True
             elif key == pygame.K_F3:
                 self.show_debug = not self.show_debug
-            elif config.DEV_MODE and key == pygame.K_r:     # 開発用(exe版では無効)
+            elif config.DEV_MODE and key == pygame.K_r and not self.climb_mode:  # 開発用(exe版では無効)
                 self.reset_requested = True
-            elif config.DEV_MODE and key == pygame.K_k:     # 開発用(exe版では無効)
+            elif config.DEV_MODE and key == pygame.K_k and not self.climb_mode:  # 開発用(exe版では無効)
                 self.egg.durability.hp = 0
-            elif config.DEV_MODE and key == pygame.K_g:     # 開発用(exe版では無効)
+            elif config.DEV_MODE and key == pygame.K_g and not self.climb_mode:  # 開発用(exe版では無効)
                 self.egg.body.position = (self.egg.body.position.x, self.stage.fall_limit + 50)
         elif self.state == STATE_STAGE_SELECT:
             self.handle_stage_select_key(key)
-        elif self.state == STATE_TITLE and key in (pygame.K_LEFT, pygame.K_RIGHT):
-            if self.menu_items[self.menu_index][0] == "difficulty":
-                self.change_difficulty(-1 if key == pygame.K_LEFT else 1)
-        elif (self.state in (STATE_TITLE, STATE_PAUSED, STATE_GAME_OVER, STATE_GAME_CLEAR)
+        elif (self.state in (STATE_PAUSED, STATE_GAME_OVER, STATE_GAME_CLEAR)
               and self.net_mode != "client"):
             self.handle_menu_key(key)
         # STATE_STAGE_CLEAR 中はキー入力を受け付けない
@@ -299,7 +316,8 @@ class Game:
         elif key == pygame.K_DOWN:
             self.menu_index = (self.menu_index + 1) % len(items)
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            self.activate(items[self.menu_index][0])
+            action = items[self.menu_index][0]
+            self.activate(action)
         elif key == pygame.K_ESCAPE:
             if self.confirming:
                 self.cancel_confirm()
@@ -312,11 +330,15 @@ class Game:
 
     def activate(self, action):
         if action == "start":
-            self.load_stage(self.save.next_start_stage())    # 最も進んだ未クリアステージから
-        elif action == "select":
-            self.open_stage_select()
+            number = CLIMB_STAGE_ID if self.game_mode == "climb" else self.save.next_start_stage()
+            self.load_stage(number)    # 通常は最も進んだ未クリア、上昇は専用コース
+        elif action == "mode":
+            self.game_mode = "climb" if self.game_mode == "stage" else "stage"
+            self.menu_items = self._title_menu_items()
         elif action == "difficulty":
             self.change_difficulty()
+        elif action == "select":
+            self.open_stage_select()
         elif action == "quit":
             self.running = False
         elif action == "resume":
@@ -332,6 +354,8 @@ class Game:
                 self.menu_index = 1              # 誤操作防止のため「いいえ」を最初に選ぶ
         elif action == "again":
             self.load_stage(1)                   # ステージ1から。保存済みのクリア状況はそのまま残る
+        elif action == "climb_restart":
+            self.load_stage(CLIMB_STAGE_ID)
         elif action == "yes":
             self.go_to_title()
         elif action == "no":
@@ -528,14 +552,15 @@ class Game:
                 player.update_spring()
                 physics.limit_speed(player.body, config.MAX_SPEED)
                 player.update_ground_state(config.PHYSICS_DT)
-                hp_before = player.durability.hp
-                player.update_damage(config.PHYSICS_DT)
-                if player.durability.hp < hp_before:
-                    self._trigger_screen_shake(hp_before - player.durability.hp)
-                if player.durability.is_broken or player.body.position.y > stage.fall_limit:
+                if not self.climb_mode:
+                    hp_before = player.durability.hp
+                    player.update_damage(config.PHYSICS_DT)
+                    if player.durability.hp < hp_before:
+                        self._trigger_screen_shake(hp_before - player.durability.hp)
+                if not self.climb_mode and (player.durability.is_broken or player.body.position.y > stage.fall_limit):
                     player.shape.sensor = True
             stage.process_items(list(self.players.values()))
-            stage.update(config.PHYSICS_DT)
+            stage.update(config.PHYSICS_DT, list(self.players.values()))
             self.accumulator -= config.PHYSICS_DT
             self.steps += 1
             if stage.cleared or self.game_over_message():
@@ -556,11 +581,13 @@ class Game:
             logger.info("ゲームオーバー: %s ステージ%d 位置=(%.0f, %.0f) 耐久度=%d",
                         message, stage.number, egg.body.position.x, egg.body.position.y,
                         egg.durability.hp)
-            self.open_menu(STATE_GAME_OVER, GAME_OVER_ITEMS, message)
+            items = CLIMB_GAME_OVER_ITEMS if self.climb_mode else GAME_OVER_ITEMS
+            self.open_menu(STATE_GAME_OVER, items, message)
             return
 
         active = [player for player in self.players.values()
-                  if player.body.position.y <= stage.fall_limit and not player.durability.is_broken]
+                  if self.climb_mode or (player.body.position.y <= stage.fall_limit
+                                         and not player.durability.is_broken)]
         if not active:
             active = [egg]
         count = len(active)
@@ -574,6 +601,12 @@ class Game:
 
     def game_over_message(self):
         """ゲームオーバーの条件を満たしていれば、画面に出すメッセージを返す。満たさなければ空文字。"""
+        if self.climb_mode:
+            if (self.egg.body.position.y > self.stage.climb_best_y + 520
+                    or self.egg.body.position.x < -70
+                    or self.egg.body.position.x > self.stage.width + 70):
+                return "足場から落下…もう一度登ろう"
+            return ""
         if all(player.durability.is_broken or player.body.position.y > self.stage.fall_limit
                for player in self.players.values()):
             return "全員ゲームオーバー…"
@@ -664,6 +697,19 @@ class Game:
     def draw_hud(self):
         """プレイ画面の表示: ステージ番号、耐久度ゲージ、トースト数、操作ガイド。"""
         screen, fonts = self.screen, self.fonts
+        if self.climb_mode:
+            current = max(0, int(self.stage.climb_start_y - self.egg.body.position.y))
+            best = max(0, int(self.stage.climb_start_y - self.stage.climb_best_y))
+            label = fonts["ui"].render("ENDLESS CLIMB", True, config.COLOR_TEXT)
+            screen.blit(label, (config.UI_MARGIN, config.UI_MARGIN))
+            score = fonts["ui"].render(f"上昇 {current} m   最高 {best} m", True, config.COLOR_TEXT)
+            screen.blit(score, (config.UI_MARGIN, config.UI_MARGIN + 38))
+            guide = fonts["small"].render(
+                "A/←:左へ移動   D/→:右へ移動   Space:ジャンプ   落下すると最初から", True,
+                config.COLOR_TEXT)
+            screen.blit(guide, (config.UI_MARGIN,
+                                config.WINDOW_HEIGHT - config.UI_MARGIN - guide.get_height()))
+            return
         difficulty = DIFFICULTIES[self.difficulty_index][0]
         label = (f"STAGE {self.stage.number} / {difficulty}"
                  if self.stage.number > 0 else "TEST STAGE")
