@@ -49,6 +49,31 @@ def add_spikes(space, triangles):
     return shapes
 
 
+def add_spring_pads(space, pads):
+    """強く跳ねる床を物理世界に追加し、形状一覧を返す。"""
+    shapes = []
+    for x, y, w, h in pads:
+        shape = pymunk.Poly(space.static_body, [
+            (x, y), (x + w, y), (x + w, y + h), (x, y + h),
+        ])
+        shape.friction = 0.9
+        shape.elasticity = 0.2
+        shape.collision_type = config.COLLISION_SPRING
+        space.add(shape)
+        shapes.append(shape)
+    return shapes
+
+
+def register_spring_collisions(space, on_spring):
+    """卵が上からバネ床へ着地したとき、反発を強めるイベントを記録する。"""
+    def begin(arbiter, _space, _data):
+        egg_shape = arbiter.shapes[0]
+        if egg_shape.body.velocity.y > 0 and arbiter.normal.y > config.GROUND_NORMAL_MIN_Y:
+            on_spring()
+
+    space.on_collision(config.COLLISION_EGG, config.COLLISION_SPRING, begin=begin)
+
+
 def register_spike_collisions(space, on_spike):
     """卵がトゲに触れている間、物理ステップごとに on_spike() を呼ぶ。
 

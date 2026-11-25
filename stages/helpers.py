@@ -53,3 +53,8 @@ def moving_platform(x, y, w, h, direction, distance, speed, pingpong=True, phase
         "pingpong": pingpong,
         "phase": phase,
     }
+
+
+def spring_pad(x, y, w=110, h=20):
+    """跳ね上げ床の設定。x,y は左上、w,h は大きさ。"""
+    return (x, y, w, h)

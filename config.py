@@ -61,6 +61,7 @@ COLLISION_TOAST = 3
 COLLISION_CHECKPOINT = 4
 COLLISION_SPIKE = 5
 COLLISION_GOAL = 6
+COLLISION_SPRING = 7
 
 # ---------- 卵の形 ----------
 EGG_WIDTH = 46
@@ -109,7 +110,7 @@ DAMAGE_FLASH_TIME = 0.6              # ダメージ後に赤く点滅する時�
 DAMAGE_FLASH_INTERVAL = 0.08         # 点滅の切り替え間隔(秒)
 
 # ---------- ステージ進行・ゴール ----------
-LAST_STAGE = 3                       # 最終ステージの番号
+LAST_STAGE = 4                       # 最終ステージの番号
 STAGE_CLEAR_WAIT = 3.0               # ステージクリア後、次のステージへ移るまでの待ち時間(秒)
 GOAL_WIDTH = 90                      # フライパンの判定の幅(px)
 GOAL_HEIGHT = 50                     # フライパンの判定の高さ(px)
